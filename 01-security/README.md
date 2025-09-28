@@ -18,6 +18,10 @@ kubectl run latest-pod --image=nginx:latest       # should FAIL (disallowed tag)
 
 kubectl run latest-pod --image=nginx:latest  # should FAIL
 kubectl run pinned-pod --image=nginx:1.25    # should PASS
+kubectl apply -f policies/mutate-namespace-default.yaml
+kubectl run test-pod --image=nginx
+kubectl get pod test-pod -o jsonpath='{.metadata.labels}'
+
 ```
 
 ## Falco
