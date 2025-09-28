@@ -1,0 +1,39 @@
+---
+- name: Ensure pip is installed
+  apt:
+    name: python3-pip
+    state: present
+    update_cache: yes
+
+- name: Ensure virtualenv is installed
+  apt:
+    name: python3-venv
+
+- name: Create a virtualenv for ansible-builder
+  ansible.builtin.command: python3 -m venv /opt/builder
+  args:
+    creates: /opt/builder/bin/activate
+
+- name: Ensure ansible-builder is installed
+  ansible.builtin.pip:
+    name: ansible-builder
+    state: present
+    virtualenv: /opt/builder
+
+- name: Symlink for ansible-builder
+  ansible.builtin.file:
+    src: /opt/builder/bin/ansible-builder
+    dest: /usr/bin/ansible-builder
+    state: link
+
+- name: Copy Builder directory
+  ansible.builtin.copy:
+    src: builder
+    dest: /tmp/
+    mode: "0755"
+    directory_mode: "0755"
+
+- name: Build the execution environment
+  ansible.builtin.command:
+    cmd: ansible-builder build --tag {{ docker_namespace }}/{{ docker_image_name }}:{{ docker_image_tag }} -v 3
+    chdir: /tmp/builder

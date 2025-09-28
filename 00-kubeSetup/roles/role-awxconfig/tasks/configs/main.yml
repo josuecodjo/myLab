@@ -1,0 +1,17 @@
+---
+# main.yml
+
+- name: organizations.yml
+  ansible.builtin.include_tasks: organizations.yml
+
+- name: teams.yml
+  ansible.builtin.include_tasks: teams.yml
+
+- name: credentials.yml
+  ansible.builtin.include_tasks: credentials.yml
+
+- name: notifications.yml
+  ansible.builtin.include_tasks: notifications.yml
+
+- name: settings.yml
+  ansible.builtin.include_tasks: settings.yml

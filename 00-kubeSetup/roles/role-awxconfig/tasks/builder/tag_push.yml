@@ -1,0 +1,23 @@
+---
+- name: Log in to Docker registry
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url }}"
+    username: "{{ docker_username }}"
+    password: "{{ docker_password }}"
+  when: docker_registry_url is defined
+  no_log: true
+
+- name: Tag the image for the registry
+  community.docker.docker_image:
+    name: "my-custom-ee"
+    tag: "latest"
+    repository: "{{ docker_registry_url }}/{{ docker_namespace }}/{{ docker_image_name }}"
+    push: false
+    source: local
+
+- name: Push the image to the registry
+  community.docker.docker_image:
+    name: "{{ docker_registry_url }}/{{ docker_namespace }}/{{ docker_image_name }}"
+    tag: "{{ docker_image_tag }}"
+    push: true
+    source: local

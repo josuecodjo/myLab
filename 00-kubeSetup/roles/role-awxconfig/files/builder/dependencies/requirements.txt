@@ -1,0 +1,6 @@
+pynetbox
+pywinrm==0.4.3
+python-gitlab==4.4.0
+jmespath==1.0.1
+requests-credssp==2.0.0
+pykerberos==1.2.4

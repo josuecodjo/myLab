@@ -1,0 +1,53 @@
+---
+- name: Créer le dossier awx_installation
+  file:
+    path: "{{ v_awx_install_path }}/awx"
+    state: directory
+
+- name: Copier les fichiers YAML nécessaires pour AWX
+  template:
+    src: "awx/{{ item }}.j2"
+    dest: "{{ v_awx_install_path }}/awx/{{ item }}"
+  loop:
+    - awx.yaml
+    - kustomization.yaml
+    - pv.yaml
+    - pvc.yaml
+
+- name: Créer les répertoires pour les Persistent Volumes
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: 1000
+    group: 0
+    mode: "0755"
+  with_items:
+    - { path: "/data/postgres-15" }
+    - { path: "/data/projects" }
+
+- name: Apply AWX instance manifest
+  command: kubectl apply -k {{ v_awx_install_path }}/awx
+
+- name: Wait for AWX Deployment to appear
+  command: >
+    kubectl get deployment awx-task -n awx --ignore-not-found
+  register: deployment_result
+  changed_when: false
+  failed_when: false
+  until: deployment_result.stdout != ""
+  retries: 30
+  delay: 20
+
+- name: Wait for AWX Instance task to be ready
+  command: kubectl rollout status deployment/awx-task -n awx
+  register: rollout_status
+  retries: 30
+  delay: 20
+  changed_when: false
+
+- name: Wait for AWX Instance web to be ready
+  command: kubectl rollout status deployment/awx-web -n awx
+  register: rollout_status
+  retries: 30
+  delay: 20
+  changed_when: false

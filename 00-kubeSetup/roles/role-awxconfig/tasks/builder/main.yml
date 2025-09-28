@@ -1,0 +1,8 @@
+---
+# main.yml
+
+- name: prereqs.yml
+  ansible.builtin.include_tasks: prereqs.yml
+
+- name: tag_push.yml
+  ansible.builtin.include_tasks: tag_push.yml

@@ -1,0 +1,19 @@
+---
+- name: Créer le dossier acme pour les fichiers de configuration
+  file:
+    path: "{{ v_awx_install_path }}/acme/{{ acme_mode }}"
+    state: directory
+
+- name: Copie des fichiers pour l'ACME
+  template:
+    src: "acme/{{ acme_mode }}/awx/{{ item }}.j2"
+    dest: "{{ v_awx_install_path }}/acme/{{ acme_mode }}/{{ item }}"
+  loop:
+    - issuer.yaml
+    - kustomization.yaml
+
+- name: Appliquer la configuration ACME sur K3S
+  command: kubectl apply -k {{ v_awx_install_path }}/acme/{{ acme_mode }}
+
+- name: Wait for issuer to be ready
+  command: kubectl wait --for=condition=Ready issuer/awx-issuer --timeout=300s -n awx

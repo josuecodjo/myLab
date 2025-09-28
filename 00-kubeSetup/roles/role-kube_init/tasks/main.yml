@@ -1,0 +1,35 @@
+---
+- name: k8s
+  block:
+    - block:
+        - name: prerequisites.yml
+          ansible.builtin.include_tasks: prerequisites.yml
+      tags: [always]
+
+    - block:
+        - name: k3s Install with traefik
+          ansible.builtin.include_tasks: k3s-traefik/main.yml
+      tags: [k3s-traefik]
+
+    - block:
+        - name: k3s Install without traefik
+          ansible.builtin.include_tasks: k3s-neutral/main.yml
+      tags: [never, k3s-neutral]
+
+    - block:
+        - name: Certmanager Install
+          ansible.builtin.include_tasks: certmanager/main.yml
+      tags: [certmanager]
+
+    - block:
+        - name: ArgoCD Install
+          ansible.builtin.include_tasks: argocd/main.yml
+      tags: [argocd]
+
+    - block:
+        - name: AWX Install
+          ansible.builtin.include_tasks: awx/main.yml
+      tags: [never, awx]
+
+  become: true
+  when: ansible_os_family == "Debian"

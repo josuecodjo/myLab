@@ -1,0 +1,22 @@
+---
+
+- name: Get AWX NodePort
+  command: kubectl get svc awx-service -n awx -o=jsonpath='{.spec.ports[0].nodePort}'
+  register: awx_nodeport
+  changed_when: false
+
+- name: Get AWX Admin Password
+  command: kubectl get secret awx-admin-password -n awx -o=jsonpath='{.data.password}'
+  register: awx_admin_password_base64
+  changed_when: false
+
+- name: Decode AWX Admin Password
+  set_fact:
+    awx_admin_password: "{{ awx_admin_password_base64.stdout | b64decode }}"
+
+- name: Display AWX Access Information
+  debug:
+    msg: |
+      AWX is accessible at: http://<NODE_IP>:{{ awx_nodeport.stdout }}
+      Admin Username: admin
+      Admin Password: {{ awx_admin_password }}

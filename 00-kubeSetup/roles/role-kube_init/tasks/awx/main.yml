@@ -1,0 +1,13 @@
+---
+#
+- name: operator.yml
+  ansible.builtin.include_tasks: operator.yml
+
+- name: certmanager.yml
+  ansible.builtin.include_tasks: certmanager.yml
+
+- name: instance.yml
+  ansible.builtin.include_tasks: instance.yml
+
+- name: awx-infos.yml
+  ansible.builtin.include_tasks: awx-infos.yml

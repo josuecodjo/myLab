@@ -1,0 +1,14 @@
+galaxy_info:
+  role_name: awxconfig
+  namespace: test
+  author: josuecodjo
+  description: testing template j2
+  company: codendeploy
+  license: codendeploy
+  min_ansible_version: "2.1"
+  platforms:
+    - name: AIX
+      versions:
+        - all
+  galaxy_tags: []
+dependencies: []

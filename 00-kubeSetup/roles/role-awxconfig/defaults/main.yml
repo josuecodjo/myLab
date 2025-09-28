@@ -1,0 +1,13 @@
+---
+# defaults controller values
+
+v_awx_node_ip: http://192.168.64.32
+v_awx_node_port: 31384
+v_awx_admin_password: Qkuxcq3LA5nX9urHkSOMdyshoLllBa3o
+
+docker_registry: docker.io
+docker_username: yourusername
+docker_password: "{{ vault_docker_password }}"
+docker_namespace: josuecodjo
+docker_image_name: ansible-ee
+docker_image_tag: latest

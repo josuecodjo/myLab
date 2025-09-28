@@ -1,0 +1,52 @@
+---
+- name: Block for project creation
+  block:
+    - name: Create project | project-{{ current_project.name }}
+      awx.awx.project:
+        name: "project-{{ current_project.name }}"
+        description: "project-{{ current_project.name }}"
+        scm_url: "{{ current_project.git_url | default(v_git_repo_url) }}"
+        scm_type: git
+        credential: '{{ current_project.credential | default("git_read") }}'
+        organization: "{{ v_awx_organizations[0].name }}"
+        update_project: false
+        scm_update_on_launch: true
+        scm_update_cache_timeout: 300
+        scm_branch: '{{ current_project.branch | default("master") }}'
+        scm_clean: true
+        state: '{{ current_project.state | default("present") }}'
+        controller_host: "{{ v_awx_node_ip }}:{{ v_awx_node_port }}"
+        controller_username: "admin"
+        controller_password: "{{ v_awx_admin_password }}"
+        validate_certs: false
+
+    - name: Assign role on project
+      awx.awx.role:
+        projects: ["project-{{ current_project.name }}"]
+        role: "use"
+        team: "{{ v_awx_organizations[0].name }}"
+        controller_host: "{{ v_awx_node_ip }}:{{ v_awx_node_port }}"
+        controller_username: "admin"
+        controller_password: "{{ v_awx_admin_password }}"
+        validate_certs: false
+      when: current_project.state | default("present") == "present"
+
+    - name: Create inventory for project-{{ current_project.name }}
+      ansible.builtin.include_tasks: dependencies/inventory.yml
+      loop: "{{ current_project.inventories | default([]) }}"
+      loop_control:
+        loop_var: current_inventory
+
+    - name: Create template for project-{{ current_project.name }}
+      ansible.builtin.include_tasks: dependencies/template.yml
+      loop: "{{ current_project.templates | default([]) }}"
+      loop_control:
+        loop_var: current_template
+
+    - name: Create schedule for project-{{ current_project.name }}
+      ansible.builtin.include_tasks: dependencies/schedule.yml
+      loop: "{{ current_project.templates | default([]) }}"
+      loop_control:
+        loop_var: current_template
+
+  ignore_errors: true

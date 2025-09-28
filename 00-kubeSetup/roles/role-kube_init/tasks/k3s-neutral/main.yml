@@ -1,0 +1,6 @@
+---
+- name: install_k3s.yml
+  ansible.builtin.include_tasks: install_k3s.yml
+
+- name: check_k3s.yml
+  ansible.builtin.include_tasks: check_k3s.yml

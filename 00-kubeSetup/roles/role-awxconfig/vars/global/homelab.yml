@@ -1,0 +1,9 @@
+---
+projet-homelab:
+  name: homelab
+  state: present
+  inventories:
+    - inventory: global
+  templates:
+    - palier_exec: global
+      inventory: global

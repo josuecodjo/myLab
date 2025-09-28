@@ -1,0 +1,25 @@
+---
+- name: Ensure K3s is running
+  systemd:
+    name: k3s
+    state: started
+    enabled: yes
+
+- name: Check Nodes
+  shell: kubectl get nodes
+  register: nodes_result
+
+- debug:
+    msg: "{{ nodes_result.stdout_lines }}"
+
+- name: create helm base
+  shell: |
+    mkdir /root/.kube
+    cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
+
+- name: Check helm package
+  shell: helm list
+  register: helm_result
+
+- debug:
+    msg: "{{ helm_result.stdout_lines }}"

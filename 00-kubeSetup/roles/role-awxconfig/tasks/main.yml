@@ -1,0 +1,25 @@
+---
+# main.yml
+
+- name: AWXCONFIG
+  block:
+    - name: awxconfig
+      ansible.builtin.include_tasks: configs/main.yml
+
+  become: true
+  tags: [never, awxconfig]
+
+- name: AWXCONFIG-PROJET
+  block:
+    - name: awxconfig-projet
+      ansible.builtin.include_tasks: projects/main.yml
+  become: true
+  tags: [never, awxconfig-projet]
+
+- name: AWXCONFIG-EE
+  block:
+    - name: awxconfig-ee
+      ansible.builtin.include_tasks: builder/main.yml
+  become: true
+  run_once: true
+  tags: [never, awxconfig-ee]

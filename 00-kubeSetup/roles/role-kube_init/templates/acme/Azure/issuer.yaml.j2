@@ -1,0 +1,29 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: awx-issuer
+spec:
+  acme:
+    # The email address to be registered with ACME CA
+    email: cert@blevrault.com
+    # The URL of the ACME API endpoint.
+    # In Let's Encrypt, this is one of the following:
+    #   Production: https://acme-v02.api.letsencrypt.org/directory
+    #   Staging   : https://acme-staging-v02.api.letsencrypt.org/directory
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: awx-issuer-account-key
+    solvers:
+      - dns01:
+          azureDNS:
+            environment: AzurePublicCloud
+            subscriptionID: {{ subscriptionid }}
+            resourceGroupName: {{ resourcegroupname }}
+            hostedZoneName: {{ hostedzonename }}
+            tenantID: {{ tenantid }}
+            clientID: {{ clientid }}
+            clientSecretSecretRef:
+              name: azuredns-config
+              key: client-secret
+

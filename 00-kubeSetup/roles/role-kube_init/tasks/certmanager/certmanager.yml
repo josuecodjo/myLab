@@ -1,0 +1,42 @@
+---
+- name: Add the cert-manager Helm repo
+  kubernetes.core.helm_repository:
+    name: cert-manager
+    repo_url: "https://charts.jetstack.io"
+
+- name: Deploy cert-manager using Helm
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: cert-manager/cert-manager
+    chart_version: "{{ v_certmanager_chart_version }}"
+    release_namespace: cert-manager
+    create_namespace: true
+    state: present
+    values:
+      installCRDs: True
+
+- name: Wait for certmanager to be ready
+  command: kubectl rollout status deployment/cert-manager -n cert-manager
+  register: rollout_status
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Créer le dossier acme pour les fichiers de configuration
+  file:
+    path: "{{ v_global_install_path }}/acme/{{ acme_mode }}"
+    state: directory
+
+- name: Copie des fichiers pour l'ACME
+  template:
+    src: "acme/{{ acme_mode }}/global/{{ item }}.j2"
+    dest: "{{ v_global_install_path }}/acme/{{ acme_mode }}/{{ item }}"
+  loop:
+    - issuer.yaml
+    - kustomization.yaml
+
+- name: Appliquer la configuration ACME sur K3S
+  command: kubectl apply -k {{ v_global_install_path }}/acme/{{ acme_mode }}
+
+- name: Wait for Cluster issuer to be ready
+  command: kubectl wait --for=condition=Ready clusterissuers/local-cluster-issuer --timeout=300s

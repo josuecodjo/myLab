@@ -1,0 +1,14 @@
+galaxy_info:
+  role_name: kube_init
+  namespace: test
+  author: josuecodjo
+  description: Install and deploy AWX
+  company: codendeploy
+  license: GNU
+  min_ansible_version: "2.1"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+  galaxy_tags: []
+dependencies: []

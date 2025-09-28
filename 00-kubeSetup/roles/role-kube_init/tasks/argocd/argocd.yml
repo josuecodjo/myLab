@@ -1,0 +1,68 @@
+---
+- name: Add the Argo CD Helm repo
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: "https://argoproj.github.io/argo-helm"
+
+- name: Deploy Argo using Helm
+  kubernetes.core.helm:
+    name: argo-cd
+    chart_ref: argo/argo-cd
+    chart_version: "{{ v_argocd_chart_version | default(omit) }}"
+    release_namespace: argocd
+    create_namespace: true
+    state: present
+    values:
+      global:
+        domain: "{{ argocd_hostname }}.{{ global_dns_name }}"
+      configs:
+        secret:
+          argocdServerAdminPassword: "$2y$10$6JOwwFWeY6gMvv4ARt6qD.Qq74hK08xzrsEH2aIrrX9WFn9fS1TQC"
+        params:
+          server.insecure: true
+      server:
+        ingress:
+          enabled: true
+          annotations:
+            cert-manager.io/cluster-issuer: local-cluster-issuer
+            cert-manager.io/propagation-timeout: "30s"
+            cert-manager.io/polling-interval: "5s"
+            # kubernetes.io/ingress.class: traefik
+          hosts:
+            - "{{ argocd_hostname }}.{{ global_dns_name }}"
+          extraTls:
+            - hosts:
+                - "{{ argocd_hostname }}.{{ global_dns_name }}"
+              secretName: "{{ argocd_hostname }}.{{ global_dns_name }}"
+
+- name: Wait for ArgoCD Deployment to appear
+  command: >
+    kubectl get deployment argo-cd-argocd-server -n argocd --ignore-not-found
+  register: deployment_result
+  changed_when: false
+  failed_when: false
+  until: deployment_result.stdout != ""
+  retries: 30
+  delay: 20
+
+- name: Wait for ArgoCD to be ready
+  command: kubectl rollout status deployment/argo-cd-argocd-server -n argocd
+  register: rollout_status
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Créer le dossier argocd pour les fichiers de configuration
+  file:
+    path: "{{ v_global_install_path }}/argocd"
+    state: directory
+
+- name: Bootstrap cluster with base apps
+  copy:
+    src: "argocd/{{ item }}"
+    dest: "{{ v_global_install_path }}/argocd/{{ item }}"
+  loop:
+    - bootstrap.yml
+
+- name: Appliquer la configuration ACME sur K3S
+  command: kubectl apply -f {{ v_global_install_path }}/argocd

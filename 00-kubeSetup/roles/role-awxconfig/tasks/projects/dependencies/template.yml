@@ -1,0 +1,32 @@
+---
+- name: Create Template for project-{{ current_project.name }}
+  awx.awx.job_template:
+    name: "{{ v_template_name }}"
+    description: "Template {{ v_template_name }}"
+    project: "project-{{ current_project.name }}"
+    credentials: ["{{ v_cred_vault }}", "{{ v_cred_machine }}"]
+    inventory: "{{ v_template_inventory_name }}"
+    playbook: "{{ v_template_playbook }}.yml"
+    ask_limit_on_launch: true
+    ask_tags_on_launch: true
+    ask_skip_tags_on_launch: true
+    ask_variables_on_launch: true
+    organization: "{{ current_template.organization | default(v_awx_organizations[0].name) }}"
+    controller_host: "{{ v_awx_node_ip }}:{{ v_awx_node_port }}"
+    controller_username: "admin"
+    controller_password: "{{ v_awx_admin_password }}"
+    validate_certs: false
+    state: '{{ current_project.state | default("present")  }}'
+  when: current_template.template_base | default(true)
+
+- name: Assign role on template
+  awx.awx.role:
+    job_templates: ["{{ v_template_name }}"]
+    role: "execute"
+    team: "{{ v_awx_organizations[0].name }}"
+    controller_host: "{{ v_awx_node_ip }}:{{ v_awx_node_port }}"
+    controller_username: "admin"
+    controller_password: "{{ v_awx_admin_password }}"
+    validate_certs: false
+  when: current_project.state | default("present") == "present" and
+    current_template.template_base | default(true)

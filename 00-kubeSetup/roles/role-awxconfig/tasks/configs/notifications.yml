@@ -1,0 +1,21 @@
+---
+- name: Create Mattermost notification in AWX
+  awx.awx.notification_template:
+    name: "Mattermost Notification"
+    state: present
+    notification_type: mattermost
+    notification_configuration:
+      mattermost_url: "{{ v_notification_url }}"
+      mattermost_no_verify_ssl: false
+    messages:
+      started:
+        message: "{{ '{{ job.name }} --> <b>{{ job.status }} ⏳</b><br/>{{ job.summary_fields.inventory.name }}<br/><br/> {{ url }}' }}"
+      success:
+        message: "{{ '{{ job.name }} --> <b>{{ job.status }} ✅</b><br/>{{ job.summary_fields.inventory.name }}<br/><br/>{{ job.limit }}<br/><br/> {{ url }}' }}"
+      error:
+        message: "{{ '{{ job.name }} --> <b>{{ job.status }} 🔥🔥🔥</b><br/>{{ job.summary_fields.inventory.name }}<br/><br/> {{ url }}' }}"
+    organization: "{{ v_awx_organizations[0].name }}"
+    controller_host: "{{ v_awx_node_ip }}:{{ v_awx_node_port }}"
+    controller_username: "admin"
+    controller_password: "{{ v_awx_admin_password }}"
+    validate_certs: false

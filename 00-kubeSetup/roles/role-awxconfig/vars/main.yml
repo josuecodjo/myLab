@@ -1,0 +1,30 @@
+---
+# vars file for awxconfig
+v_awx_repo_username: awx
+v_awx_repo_password: gldt-xBjnEpe2RbxBCSs3noVf
+v_cred_machine_user: awx
+v_cred_machine_pass: changecemotdepasse
+v_cred_machine: machine_credentials
+v_cred_vault: vault_key
+v_cred_vault_value: vault123456
+v_git_repo_url: "https://github.com/josuecodjo/projet-{{ current_project.name }}.git"
+
+v_awx_organizations:
+  - name: "DevOps Team"
+    description: "Handles CI/CD Pipelines"
+  - name: "Security Team"
+    description: "Manages security policies"
+  - name: "QA Team"
+    description: "Quality Assurance and Testing"
+
+v_notification_url: www.example.com/hook
+
+# Projects Processing
+v_loadprojects: []
+v_loadprojects_limit: []
+v_loadprojects_name: []
+v_inventory_name: "{{ current_inventory.inventory }}"
+v_template_inventory: "{{ current_template.inventory }}"
+v_template_inventory_name: '{{ v_template_inventory ~ "_" ~ current_project.name }}'
+v_template_playbook: '{{ current_template.playbook | default("playbook") }}'
+v_template_name: '{{ v_template_inventory_name ~ "_" ~ v_template_playbook }}'

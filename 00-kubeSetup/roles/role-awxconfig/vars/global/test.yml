@@ -1,0 +1,18 @@
+---
+projet-test:
+  name: test
+  state: present
+  inventories:
+    - inventory: global
+  templates:
+    - palier_exec: global
+      inventory: global
+      jobs:
+        - suffix: "all"
+          enabled: true
+          limit: stormy
+          start_date: "2025-03-16 05:00:00"
+          job_tags: "hardening"
+          rrules:
+            - frequency: "week"
+              byweekday: "friday"

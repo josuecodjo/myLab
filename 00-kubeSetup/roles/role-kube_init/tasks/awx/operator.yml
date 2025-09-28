@@ -1,0 +1,23 @@
+---
+
+- name: Add the AWX Operator Helm repo
+  kubernetes.core.helm_repository:
+    name: awx-operator
+    repo_url: "https://ansible-community.github.io/awx-operator-helm/"
+
+- name: Deploy AWX Operator using Helm
+  kubernetes.core.helm:
+    name: awx-operator
+    chart_ref: awx-operator/awx-operator
+    chart_version: "{{ v_awx_chart_version }}"
+    release_namespace: awx
+    create_namespace: true
+    state: present
+
+- name: Wait for AWX Operator to be ready
+  command: kubectl rollout status deployment/awx-operator-controller-manager -n awx
+  register: rollout_status
+  retries: 30
+  delay: 10
+  changed_when: false
+

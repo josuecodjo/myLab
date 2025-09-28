@@ -1,0 +1,11 @@
+---
+- name: Create Teams
+  awx.awx.team:
+    name: "{{ item.name }}"
+    organization: "{{ item.name }}"
+    state: present
+    controller_host: "{{ v_awx_node_ip }}:{{ v_awx_node_port }}"
+    controller_username: "admin"
+    controller_password: "{{ v_awx_admin_password }}"
+    validate_certs: false
+  loop: "{{ v_awx_organizations }}"

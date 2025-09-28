@@ -1,0 +1,12 @@
+---
+- name: Define a list of valid jobs
+  set_fact:
+    current_valid_jobs: []
+
+- name: Create schedule job for {{ current_template.inventory ~ "_" ~ current_project.name }}
+  ansible.builtin.include_tasks: schedule_create.yml
+  loop: "{{ current_template.jobs }}"
+  loop_control:
+    loop_var: current_job
+  when: current_template.jobs is defined and
+    current_project.state | default("present") == "present"

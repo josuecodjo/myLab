@@ -1,0 +1,11 @@
+---
+# main.yml
+
+- name: load_projects.yml
+  ansible.builtin.include_tasks: load_projects.yml
+
+- name: create_projects.yml
+  ansible.builtin.include_tasks: create_projects.yml
+  loop: "{{ v_loadprojects }}"
+  loop_control:
+    loop_var: current_project

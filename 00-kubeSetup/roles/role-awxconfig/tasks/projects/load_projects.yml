@@ -1,0 +1,27 @@
+---
+- set_fact:
+    v_loadprojects_limit: "{{ lookup('ansible.builtin.vars', 'projets')|default(omit) }}"
+  when: projets is defined
+
+- name: Include vars file
+  include_vars:
+    file: "vars/global/{{ current_project_name }}.yml"
+  loop: '{{ v_loadprojects_limit.split(",") }}'
+  loop_control:
+    loop_var: current_project_name
+  when: v_loadprojects_limit|length > 0
+
+- name: Include vars file all projects
+  include_vars:
+    dir: "vars/global"
+  when: v_loadprojects_limit|length == 0
+
+- name: get vars startwith projet-
+  set_fact:
+    v_loadprojects_name: "{{ lookup('ansible.builtin.varnames','projet-.+') }}"
+
+- set_fact:
+    v_loadprojects: "{{ v_loadprojects + [ vars[current_project] ] }}"
+  loop: '{{ v_loadprojects_name.split(",") }}'
+  loop_control:
+    loop_var: current_project

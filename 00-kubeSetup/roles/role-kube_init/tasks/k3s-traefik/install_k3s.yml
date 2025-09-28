@@ -1,0 +1,10 @@
+---
+- name: Verify k3s Install
+  ansible.builtin.stat:
+    path: /etc/rancher/k3s
+  register: k3s_result
+
+- name: install k3s
+  shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION='{{ v_k3s_version }}' sh -s - --write-kubeconfig-mode 644
+  when: k3s_result.stat.isdir is not defined
