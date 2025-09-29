@@ -14,12 +14,10 @@ kubectl apply -f kyverno/policies/
 ```sh
 kubectl apply -f kyverno/test-pods/good-pod.yaml  # should succeed
 kubectl apply -f kyverno/test-pods/bad-pod.yaml   # should FAIL (missing team label)
-kubectl run latest-pod --image=nginx:latest       # should FAIL (disallowed tag)
+kubectl run latest-pod --image=nginx:latest       # should FAIL (no latest tag allowed)
 
-kubectl run latest-pod --image=nginx:latest  # should FAIL
-kubectl run pinned-pod --image=nginx:1.25    # should PASS
-kubectl apply -f policies/mutate-namespace-default.yaml
-kubectl run test-pod --image=nginx
+kubectl run pinned-pod --image=nginx:1.25    # should FAIL (needs label team)
+
 kubectl get pod test-pod -o jsonpath='{.metadata.labels}'
 
 ```
