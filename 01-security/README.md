@@ -20,7 +20,10 @@ kubectl run pinned-pod --image=nginx:1.25    # should FAIL (needs label team)
 
 kubectl get pod test-pod -o jsonpath='{.metadata.labels}'
 
+kubectl port-forward svc/policy-reporter-ui 8001:8080 -n policy-reporter
+
 ```
+open browser at localhost:8001
 
 ## Falco
 
