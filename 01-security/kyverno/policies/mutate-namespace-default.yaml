@@ -1,16 +1,17 @@
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: add-default-label
+  name: add-labels
 spec:
   rules:
-    - name: add-default-label
+    - name: add-team
       match:
-        resources:
-          kinds:
-            - Pod
+        any:
+          - resources:
+              kinds:
+                - Pod
       mutate:
         patchStrategicMerge:
           metadata:
             labels:
-              environment: "dev"
+              +(team): bravo

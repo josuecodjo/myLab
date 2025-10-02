@@ -1,16 +1,18 @@
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: require-team-label
+  name: require-labels
 spec:
-  validationFailureAction: enforce
   rules:
-    - name: require-team
+    - name: check-team
       match:
-        resources:
-          kinds: ["Pod"]
+        any:
+          - resources:
+              kinds:
+                - Pod
       validate:
-        message: "All pods must have a 'team' label"
+        failureAction: Enforce
+        message: "label 'team' is required"
         pattern:
           metadata:
             labels:
