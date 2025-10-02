@@ -25,6 +25,8 @@ kubectl port-forward svc/policy-reporter-ui 8001:8080 -n policy-reporter
 ```
 open browser at localhost:8001
 
+https://kyverno.home.lab/#/
+
 ## Falco
 
 ### Test Scenarios
