@@ -6,7 +6,7 @@
 ### Apply configurations
 
 ```sh
-kubectl apply -f kyverno/policies/
+kubectl apply -f kyverno/policies/disallow-latest-tag.yaml
 ```
 
 ### Test Scenarios
