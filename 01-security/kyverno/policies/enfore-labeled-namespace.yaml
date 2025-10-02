@@ -1,0 +1,19 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-namespace-labels
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: namespace-labels
+      match:
+        resources:
+          kinds: ["Namespace"]
+      validate:
+        message: "Namespaces must contain labels: cost-center and compliance-level."
+        pattern:
+          metadata:
+            labels:
+              cost-center: "?*"
+              compliance-level: "?*"
