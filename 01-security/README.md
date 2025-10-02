@@ -27,8 +27,17 @@ kubectl get pod test-pod -o jsonpath='{.metadata.labels}'
 ### Test Scenarios
 
 ```sh
-kubectl exec -it good-pod -- sh
-# inside container:
-echo "hacked" > /etc/passwd
+kubectl port-forward svc/falco-falcosidekick-ui 8000:2802 -n falco
+```
+open webbrowser at localhost:8000 connect with admin/admin
+
+check the event tabs and do
+
+```sh
+kubectl exec -it good-pod -- cat /etc/shadow
+
+or
+
+kubectl exec -it $(kubectl get pods --selector=team=devops -o name) -- cat /etc/shadow
 
 ```
