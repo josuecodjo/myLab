@@ -1,0 +1,26 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-latest-image-tag
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: no-latest-tag
+      match:
+        resources:
+          kinds:
+            - Pod
+            - Deployment
+            - DaemonSet
+            - StatefulSet
+            - Job
+            - CronJob
+      validate:
+        message: "Using the :latest tag is not allowed. Use a specific immutable image tag or digest."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - image: "!*:latest"
