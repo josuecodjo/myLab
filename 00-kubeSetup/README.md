@@ -34,7 +34,7 @@ ansible-galaxy install --ignore-errors  -r roles/requirements.yml --roles-path r
 ```sh
 ansible-playbook -i hosts_global playbook.yml
 ansible-playbook -i hosts_global playbook.yml -l stormy
-ansible-playbook -i hosts_global playbook.yml -l stormy -t k3s-traefik,argocd,certmanager,awx}
+ansible-playbook -i hosts_global playbook.yml -l stormy -t k3s-traefik,argocd,certmanager,awx
 ansible-playbook -i hosts_global playbook.yml -l stormy -t awxconfig
 ansible-playbook -i hosts_global playbook.yml -l stormy -t awxconfig-projet
 ansible-playbook -i hosts_global playbook.yml -l stormy -t awxconfig-ee
