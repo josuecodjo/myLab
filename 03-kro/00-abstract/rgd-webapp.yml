@@ -1,28 +1,36 @@
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
-  name: web-app
+  name: webapp
 spec:
   schema:
     apiVersion: v1alpha1
     kind: WebApp
     spec:
-      name: string
-      image: string
-      replicas: integer | default=2
+      image: string | default="nginx"
+      port: integer | default=80
+      replicas: integer | default=1
 
       # Feature Flags
       ingress:
         enabled: boolean | default=false
         host: string | default=""
+        issuer: string | default="local-cluster-issuer"
 
       database:
         enabled: boolean | default=false
         dbName: string | default="app_db"
 
+      namespace: string | default="default"
+
   resources:
-    # 1. CONDITIONAL DATABASE
-    # This creates a Custom Resource of the type we defined in Part 1
+    - id: namespace
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.spec.namespace}
+
     - id: app-db
       includeWhen:
         - ${schema.spec.database.enabled}
@@ -30,7 +38,7 @@ spec:
         apiVersion: kro.run/v1alpha1
         kind: PostgresInstance
         metadata:
-          name: ${schema.spec.name}-pg
+          name: ${schema.metadata.name}-pg
         spec:
           dbName: ${schema.spec.database.dbName}
           storageGB: 5
@@ -41,22 +49,25 @@ spec:
         apiVersion: apps/v1
         kind: Deployment
         metadata:
-          name: ${schema.spec.name}
+          name: ${schema.metadata.name}
+          namespace: ${resources.namespace.metadata.name}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           replicas: ${schema.spec.replicas}
           selector:
             matchLabels:
-              app: ${schema.spec.name}
+              app: ${schema.metadata.name}
           template:
             metadata:
               labels:
-                app: ${schema.spec.name}
+                app: ${schema.metadata.name}
             spec:
               containers:
                 - name: app
                   image: ${schema.spec.image}
                   ports:
-                    - containerPort: 80
+                    - containerPort: ${schema.spec.port}
                   env:
                     # Generic Env Var
                     - name: APP_MODE
@@ -76,13 +87,16 @@ spec:
         apiVersion: v1
         kind: Service
         metadata:
-          name: ${schema.spec.name}
+          name: ${schema.metadata.name}-svc
+          namespace: ${resources.namespace.metadata.name}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           ports:
-            - port: 80
+            - port: ${schema.spec.port}
               targetPort: 80
           selector:
-            app: ${schema.spec.name}
+            app: ${schema.metadata.name}
 
     # 4. CONDITIONAL INGRESS
     - id: ingress
@@ -92,18 +106,21 @@ spec:
         apiVersion: traefik.io/v1alpha1
         kind: IngressRoute
         metadata:
-          name: ${schema.spec.name}-ingress
+          name: ${schema.metadata.name}-ingress
+          namespace: ${resources.namespace.metadata.name}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           entryPoints:
             - websecure
           routes:
-            - match: Host(`${schema.spec.name}.home.lab`)
+            - match: Host(`${schema.metadata.name}.home.lab`)
               kind: Rule
               services:
                 - name: ${service.metadata.name}
-                  port: 80
+                  port: ${schema.spec.port}
           tls:
-            secretName: ${schema.spec.name}.home.lab
+            secretName: ${schema.metadata.name}.home.lab
 
     - id: certificate
       includeWhen:
@@ -112,11 +129,14 @@ spec:
         apiVersion: cert-manager.io/v1
         kind: Certificate
         metadata:
-          name: ${schema.spec.name}.home.lab
+          name: ${schema.metadata.name}.home.lab
+          namespace: ${resources.namespace.metadata.name}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           dnsNames:
-            - ${schema.spec.name}.home.lab
-          secretName: ${schema.spec.name}.home.lab
+            - ${schema.metadata.name}.home.lab
+          secretName: ${schema.metadata.name}.home.lab
           issuerRef:
-            name: local-cluster-issuer
+            name: ${schema.spec.ingress.issuer}
             kind: ClusterIssuer

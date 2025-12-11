@@ -1,7 +1,9 @@
 apiVersion: kro.run/v1alpha1
 kind: WebApp
 metadata:
-  name: simple-frontend
+  name: app
 spec:
-  name: "frontend"
-  image: "nginx:alpine"
+  image: nginx
+  replicas: 2
+  ingress:
+    enabled: true
