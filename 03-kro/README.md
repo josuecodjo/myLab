@@ -1,5 +1,5 @@
 ```bash
-kubectl apply -f 00-abstract
+kubectl apply -f 00-abstract/rgd-app.yml
 
 kubectl get rgd application -o wide
 
