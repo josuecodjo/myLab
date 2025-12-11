@@ -1,0 +1,94 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: application
+spec:
+  # kro uses this simple schema to create your CRD schema and apply it
+  # The schema defines what users can provide when they instantiate the RGD (create an instance).
+  schema:
+    apiVersion: v1alpha1
+    kind: Application
+    spec:
+      # Spec fields that users can provide.
+      name: string
+      image: string | default="nginx"
+      replicas: integer | default=3
+      ingress:
+        enabled: boolean | default=false
+    status:
+      # Fields the controller will inject into instances status.
+      deploymentConditions: ${deployment.status.conditions}
+      availableReplicas: ${deployment.status.availableReplicas}
+
+  # Define the resources this API will manage.
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.spec.name} # Use the name provided by user
+        spec:
+          replicas: ${schema.spec.replicas} # Use the replicas provided by user
+          selector:
+            matchLabels:
+              app: ${schema.spec.name}
+          template:
+            metadata:
+              labels:
+                app: ${schema.spec.name}
+            spec:
+              containers:
+                - name: ${schema.spec.name}
+                  image: ${schema.spec.image} # Use the image provided by user
+                  ports:
+                    - containerPort: 80
+
+    - id: service
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.spec.name}-svc
+        spec:
+          selector: ${deployment.spec.selector.matchLabels} # Use the deployment selector
+          ports:
+            - protocol: TCP
+              port: 80
+              targetPort: 80
+
+    - id: ingress
+      includeWhen:
+        - ${schema.spec.ingress.enabled} # Only include if the user wants to create an Ingress
+      template:
+        apiVersion: traefik.io/v1alpha1
+        kind: IngressRoute
+        metadata:
+          name: ${schema.spec.name}-ingress
+        spec:
+          entryPoints:
+            - websecure
+          routes:
+            - match: Host(`${schema.spec.name}.home.lab`)
+              kind: Rule
+              services:
+                - name: ${service.metadata.name}
+                  port: 80
+          tls:
+            secretName: ${schema.spec.name}.home.lab
+
+    - id: cert
+      includeWhen:
+        - ${schema.spec.ingress.enabled}
+      template:
+        apiVersion: cert-manager.io/v1
+        kind: Certificate
+        metadata:
+          name: ${schema.spec.name}.home.lab
+        spec:
+          dnsNames:
+            - ${schema.spec.name}.home.lab
+          secretName: ${schema.spec.name}.home.lab
+          issuerRef:
+            name: local-cluster-issuer
+            kind: ClusterIssuer
