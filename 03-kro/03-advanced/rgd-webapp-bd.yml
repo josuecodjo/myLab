@@ -1,0 +1,147 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: webapp
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: WebApp
+    spec:
+      image: string | default="nginx"
+      port: integer | default=80
+      replicas: integer | default=1
+
+      # Feature Flags
+      ingress:
+        enabled: boolean | default=false
+        host: string | default=""
+        issuer: string | default="local-cluster-issuer"
+
+      database:
+        enabled: boolean | default=false
+        dbName: string | default="app_db"
+
+      namespace: string | default="default"
+
+    status:
+      # Fields the controller will inject into instances status.
+      deploymentConditions: ${deployment.status.conditions}
+      availableReplicas: ${deployment.status.availableReplicas}
+
+  resources:
+    - id: scope
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.spec.namespace}
+
+    - id: app-db
+      includeWhen:
+        - ${schema.spec.database.enabled}
+      template:
+        apiVersion: kro.run/v1alpha1
+        kind: PostgresInstance
+        metadata:
+          name: ${schema.metadata.name}-pg
+        spec:
+          dbName: ${schema.spec.database.dbName}
+          storageGB: 5
+
+    # 2. THE APPLICATION DEPLOYMENT
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
+        spec:
+          replicas: ${schema.spec.replicas}
+          selector:
+            matchLabels:
+              app: ${schema.metadata.name}
+          template:
+            metadata:
+              labels:
+                app: ${schema.metadata.name}
+            spec:
+              containers:
+                - name: app
+                  image: ${schema.spec.image}
+                  ports:
+                    - containerPort: ${schema.spec.port}
+                  env:
+                    # Generic Env Var
+                    - name: APP_MODE
+                      value: "production"
+
+                  # MAGIC BINDING:
+                  # If DB is enabled, inject the secret created by the PostgresInstance
+                  envFrom:
+                    - secretRef:
+                        name: ${app-db.status.connectionSecret}
+                      # We use a CEL filter here: only include this block if DB is enabled
+                      $kro-include-if: ${schema.spec.database.enabled}
+
+    # 3. SERVICE
+    - id: service
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.metadata.name}-svc
+          namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
+        spec:
+          ports:
+            - port: ${schema.spec.port}
+              targetPort: 80
+          selector:
+            app: ${schema.metadata.name}
+
+    # 4. CONDITIONAL INGRESS
+    - id: ingress
+      includeWhen:
+        - ${schema.spec.ingress.enabled} # Only include if the user wants to create an Ingress
+      template:
+        apiVersion: traefik.io/v1alpha1
+        kind: IngressRoute
+        metadata:
+          name: ${schema.metadata.name}-ingress
+          namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
+        spec:
+          entryPoints:
+            - websecure
+          routes:
+            - match: Host(`${schema.metadata.name}.home.lab`)
+              kind: Rule
+              services:
+                - name: ${service.metadata.name}
+                  port: ${schema.spec.port}
+          tls:
+            secretName: ${schema.metadata.name}.home.lab
+
+    - id: certificate
+      includeWhen:
+        - ${schema.spec.ingress.enabled}
+      template:
+        apiVersion: cert-manager.io/v1
+        kind: Certificate
+        metadata:
+          name: ${schema.metadata.name}.home.lab
+          namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
+        spec:
+          dnsNames:
+            - ${schema.metadata.name}.home.lab
+          secretName: ${schema.metadata.name}.home.lab
+          issuerRef:
+            name: ${schema.spec.ingress.issuer}
+            kind: ClusterIssuer

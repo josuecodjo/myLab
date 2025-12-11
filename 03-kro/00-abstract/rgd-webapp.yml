@@ -17,10 +17,6 @@ spec:
         host: string | default=""
         issuer: string | default="local-cluster-issuer"
 
-      database:
-        enabled: boolean | default=false
-        dbName: string | default="app_db"
-
       namespace: string | default="default"
 
     status:
@@ -29,24 +25,12 @@ spec:
       availableReplicas: ${deployment.status.availableReplicas}
 
   resources:
-    - id: namespace
+    - id: scope
       template:
         apiVersion: v1
         kind: Namespace
         metadata:
           name: ${schema.spec.namespace}
-
-    # - id: app-db
-    #   includeWhen:
-    #     - ${schema.spec.database.enabled}
-    #   template:
-    #     apiVersion: kro.run/v1alpha1
-    #     kind: PostgresInstance
-    #     metadata:
-    #       name: ${schema.metadata.name}-pg
-    #     spec:
-    #       dbName: ${schema.spec.database.dbName}
-    #       storageGB: 5
 
     # 2. THE APPLICATION DEPLOYMENT
     - id: deployment
@@ -55,7 +39,7 @@ spec:
         kind: Deployment
         metadata:
           name: ${schema.metadata.name}
-          namespace: ${resources.namespace.metadata.name}
+          namespace: ${schema.spec.namespace}
           annotations:
             argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
@@ -73,18 +57,6 @@ spec:
                   image: ${schema.spec.image}
                   ports:
                     - containerPort: ${schema.spec.port}
-                  env:
-                    # Generic Env Var
-                    - name: APP_MODE
-                      value: "production"
-
-                  # MAGIC BINDING:
-                  # If DB is enabled, inject the secret created by the PostgresInstance
-                  envFrom:
-                    - secretRef:
-                        name: ${app-db.status.connectionSecret}
-                      # We use a CEL filter here: only include this block if DB is enabled
-                      $kro-include-if: ${schema.spec.database.enabled}
 
     # 3. SERVICE
     - id: service
@@ -93,7 +65,7 @@ spec:
         kind: Service
         metadata:
           name: ${schema.metadata.name}-svc
-          namespace: ${resources.namespace.metadata.name}
+          namespace: ${schema.spec.namespace}
           annotations:
             argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
@@ -112,7 +84,7 @@ spec:
         kind: IngressRoute
         metadata:
           name: ${schema.metadata.name}-ingress
-          namespace: ${resources.namespace.metadata.name}
+          namespace: ${schema.spec.namespace}
           annotations:
             argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
@@ -135,7 +107,7 @@ spec:
         kind: Certificate
         metadata:
           name: ${schema.metadata.name}.home.lab
-          namespace: ${resources.namespace.metadata.name}
+          namespace: ${schema.spec.namespace}
           annotations:
             argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
