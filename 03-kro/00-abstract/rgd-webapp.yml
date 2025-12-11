@@ -26,6 +26,8 @@ spec:
 
   resources:
     - id: scope
+      includeWhen:
+        - ${schema.spec.namespace != "default"}
       template:
         apiVersion: v1
         kind: Namespace
