@@ -23,6 +23,11 @@ spec:
 
       namespace: string | default="default"
 
+    status:
+      # Fields the controller will inject into instances status.
+      deploymentConditions: ${deployment.status.conditions}
+      availableReplicas: ${deployment.status.availableReplicas}
+
   resources:
     - id: namespace
       template:
@@ -31,17 +36,17 @@ spec:
         metadata:
           name: ${schema.spec.namespace}
 
-    - id: app-db
-      includeWhen:
-        - ${schema.spec.database.enabled}
-      template:
-        apiVersion: kro.run/v1alpha1
-        kind: PostgresInstance
-        metadata:
-          name: ${schema.metadata.name}-pg
-        spec:
-          dbName: ${schema.spec.database.dbName}
-          storageGB: 5
+    # - id: app-db
+    #   includeWhen:
+    #     - ${schema.spec.database.enabled}
+    #   template:
+    #     apiVersion: kro.run/v1alpha1
+    #     kind: PostgresInstance
+    #     metadata:
+    #       name: ${schema.metadata.name}-pg
+    #     spec:
+    #       dbName: ${schema.spec.database.dbName}
+    #       storageGB: 5
 
     # 2. THE APPLICATION DEPLOYMENT
     - id: deployment
