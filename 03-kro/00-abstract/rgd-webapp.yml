@@ -1,0 +1,107 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: web-app
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: WebApp
+    spec:
+      name: string
+      image: string
+      replicas: integer | default=2
+
+      # Feature Flags
+      ingress:
+        enabled: boolean | default=false
+        host: string | default=""
+
+      database:
+        enabled: boolean | default=false
+        dbName: string | default="app_db"
+
+  resources:
+    # 1. CONDITIONAL DATABASE
+    # This creates a Custom Resource of the type we defined in Part 1
+    - id: app-db
+      includeWhen:
+        - ${schema.spec.database.enabled}
+      template:
+        apiVersion: kro.run/v1alpha1
+        kind: PostgresInstance
+        metadata:
+          name: ${schema.spec.name}-pg
+        spec:
+          dbName: ${schema.spec.database.dbName}
+          storageGB: 5
+
+    # 2. THE APPLICATION DEPLOYMENT
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.spec.name}
+        spec:
+          replicas: ${schema.spec.replicas}
+          selector:
+            matchLabels:
+              app: ${schema.spec.name}
+          template:
+            metadata:
+              labels:
+                app: ${schema.spec.name}
+            spec:
+              containers:
+                - name: app
+                  image: ${schema.spec.image}
+                  ports:
+                    - containerPort: 80
+                  env:
+                    # Generic Env Var
+                    - name: APP_MODE
+                      value: "production"
+
+                  # MAGIC BINDING:
+                  # If DB is enabled, inject the secret created by the PostgresInstance
+                  envFrom:
+                    - secretRef:
+                        name: ${app-db.status.connectionSecret}
+                      # We use a CEL filter here: only include this block if DB is enabled
+                      $kro-include-if: ${schema.spec.database.enabled}
+
+    # 3. SERVICE
+    - id: service
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.spec.name}
+        spec:
+          ports:
+            - port: 80
+              targetPort: 80
+          selector:
+            app: ${schema.spec.name}
+
+    # 4. CONDITIONAL INGRESS
+    - id: ingress
+      includeWhen:
+        - ${schema.spec.ingress.enabled}
+      template:
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: ${schema.spec.name}
+        spec:
+          rules:
+            - host: ${schema.spec.ingress.host}
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: ${service.metadata.name}
+                        port:
+                          number: 80

@@ -1,0 +1,87 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: postgres-instance
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: PostgresInstance
+    spec:
+      dbName: string | default="mydb"
+      username: string | default="admin"
+      # In a real scenario, you might want to auto-generate this if empty
+      password: string | default="changeMe123!"
+      storageGB: integer | default=1
+    status:
+      # We expose the Secret name and Host so the App RGD can read them later
+      connectionSecret: ${auth-secret.metadata.name}
+      serviceHost: ${service.metadata.name}
+      servicePort: 80 # mapped to 5432
+
+  resources:
+    # 1. The Secret (Holds credentials)
+    - id: auth-secret
+      template:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${schema.spec.dbName}-auth
+        stringData:
+          POSTGRES_DB: ${schema.spec.dbName}
+          POSTGRES_USER: ${schema.spec.username}
+          POSTGRES_PASSWORD: ${schema.spec.password}
+          # We add a connection string for convenience
+          DATABASE_URL: "postgres://${schema.spec.username}:${schema.spec.password}@${schema.spec.dbName}-svc:5432/${schema.spec.dbName}"
+
+    # 2. The Service (Networking)
+    - id: service
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.spec.dbName}-svc
+        spec:
+          ports:
+            - port: 5432
+              targetPort: 5432
+          selector:
+            app: ${schema.spec.dbName}
+
+    # 3. The Workload (StatefulSet)
+    - id: db-workload
+      template:
+        apiVersion: apps/v1
+        kind: StatefulSet
+        metadata:
+          name: ${schema.spec.dbName}
+        spec:
+          selector:
+            matchLabels:
+              app: ${schema.spec.dbName}
+          serviceName: ${schema.spec.dbName}-svc
+          replicas: 1
+          template:
+            metadata:
+              labels:
+                app: ${schema.spec.dbName}
+            spec:
+              containers:
+                - name: postgres
+                  image: postgres:15-alpine
+                  ports:
+                    - containerPort: 5432
+                  # Inject env vars directly from the secret we created above
+                  envFrom:
+                    - secretRef:
+                        name: ${auth-secret.metadata.name}
+                  volumeMounts:
+                    - name: data
+                      mountPath: /var/lib/postgresql/data
+          volumeClaimTemplates:
+            - metadata:
+                name: data
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: ${schema.spec.storageGB}Gi

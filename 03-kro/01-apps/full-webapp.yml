@@ -1,0 +1,16 @@
+apiVersion: kro.run/v1alpha1
+kind: WebApp
+metadata:
+  name: my-full-stack-app
+spec:
+  name: "super-app"
+  image: "nginx:alpine" # Using nginx just for testing
+  replicas: 1
+
+  ingress:
+    enabled: true
+    host: "myapp.local"
+
+  database:
+    enabled: true
+    dbName: "super_users"
