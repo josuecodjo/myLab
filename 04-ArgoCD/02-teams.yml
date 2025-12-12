@@ -1,20 +1,36 @@
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: app-instances
+  name: team-apps-set
   namespace: argocd
 spec:
-  project: default
-  source:
-    repoURL: https://github.com/josuecodjo/team-apps.git
-    targetRevision: HEAD
-    path: instances
-  destination:
-    server: "https://kubernetes.default.svc"
-    namespace: default
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+  generators:
+    - git:
+        repoURL: https://github.com/josuecodjo/team-apps.git
+        revision: HEAD
+        directories:
+          - path: instances/*
+
+  template:
+    metadata:
+      name: "{{path.basename}}"
+      labels:
+        category: team-kro-instance
+        team: "{{path.basename}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/josuecodjo/team-apps.git
+        targetRevision: HEAD
+        path: "{{path}}"
+
+      destination:
+        server: "https://kubernetes.default.svc"
+        namespace: default
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
