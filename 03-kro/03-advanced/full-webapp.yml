@@ -1,15 +1,15 @@
 apiVersion: kro.run/v1alpha1
-kind: WebApp
+kind: AppBD
 metadata:
-  name: my-full-stack-app
+  name: appbd
+  annotations:
+    argocd.argoproj.io/tracking-id: appbd-app
 spec:
-  name: "super-app"
-  image: "nginx:alpine" # Using nginx just for testing
+  image: "nginx"
   replicas: 1
 
   ingress:
     enabled: true
-    host: "myapp.local"
 
   database:
     enabled: true

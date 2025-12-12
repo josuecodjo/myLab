@@ -11,21 +11,23 @@ spec:
       username: string | default="admin"
       # In a real scenario, you might want to auto-generate this if empty
       password: string | default="changeMe123!"
-      storageGB: integer | default=1
+      storageGB: string | default=1Gi
+      namespace: string | default="default"
     status:
       # We expose the Secret name and Host so the App RGD can read them later
-      connectionSecret: ${auth-secret.metadata.name}
+      connectionSecret: ${dbauth.metadata.name}
       serviceHost: ${service.metadata.name}
       servicePort: 80 # mapped to 5432
 
   resources:
     # 1. The Secret (Holds credentials)
-    - id: auth-secret
+    - id: dbauth
       template:
         apiVersion: v1
         kind: Secret
         metadata:
           name: ${schema.spec.dbName}-auth
+          namespace: ${schema.spec.namespace}
         stringData:
           POSTGRES_DB: ${schema.spec.dbName}
           POSTGRES_USER: ${schema.spec.username}
@@ -40,6 +42,7 @@ spec:
         kind: Service
         metadata:
           name: ${schema.spec.dbName}-svc
+          namespace: ${schema.spec.namespace}
         spec:
           ports:
             - port: 5432
@@ -48,12 +51,13 @@ spec:
             app: ${schema.spec.dbName}
 
     # 3. The Workload (StatefulSet)
-    - id: db-workload
+    - id: dbinstance
       template:
         apiVersion: apps/v1
         kind: StatefulSet
         metadata:
           name: ${schema.spec.dbName}
+          namespace: ${schema.spec.namespace}
         spec:
           selector:
             matchLabels:
@@ -73,7 +77,7 @@ spec:
                   # Inject env vars directly from the secret we created above
                   envFrom:
                     - secretRef:
-                        name: ${auth-secret.metadata.name}
+                        name: ${dbauth.metadata.name}
                   volumeMounts:
                     - name: data
                       mountPath: /var/lib/postgresql/data
@@ -84,4 +88,4 @@ spec:
                 accessModes: ["ReadWriteOnce"]
                 resources:
                   requests:
-                    storage: ${schema.spec.storageGB}Gi
+                    storage: ${schema.spec.storageGB}

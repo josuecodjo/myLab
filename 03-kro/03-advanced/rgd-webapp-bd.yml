@@ -1,11 +1,11 @@
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
-  name: webapp
+  name: appbd
 spec:
   schema:
     apiVersion: v1alpha1
-    kind: WebApp
+    kind: AppBD
     spec:
       image: string | default="nginx"
       port: integer | default=80
@@ -30,13 +30,17 @@ spec:
 
   resources:
     - id: scope
+      includeWhen:
+        - ${schema.spec.namespace != "default"}
       template:
         apiVersion: v1
         kind: Namespace
         metadata:
           name: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
 
-    - id: app-db
+    - id: appdb
       includeWhen:
         - ${schema.spec.database.enabled}
       template:
@@ -44,9 +48,14 @@ spec:
         kind: PostgresInstance
         metadata:
           name: ${schema.metadata.name}-pg
+          namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
+
         spec:
           dbName: ${schema.spec.database.dbName}
-          storageGB: 5
+          storageGB: 5Gi
+          namespace: ${schema.spec.namespace}
 
     # 2. THE APPLICATION DEPLOYMENT
     - id: deployment
@@ -74,17 +83,11 @@ spec:
                   ports:
                     - containerPort: ${schema.spec.port}
                   env:
-                    # Generic Env Var
                     - name: APP_MODE
                       value: "production"
-
-                  # MAGIC BINDING:
-                  # If DB is enabled, inject the secret created by the PostgresInstance
                   envFrom:
                     - secretRef:
-                        name: ${app-db.status.connectionSecret}
-                      # We use a CEL filter here: only include this block if DB is enabled
-                      $kro-include-if: ${schema.spec.database.enabled}
+                        name: ${appdb.status.connectionSecret}
 
     # 3. SERVICE
     - id: service
