@@ -2,6 +2,8 @@ apiVersion: kro.run/v1alpha1
 kind: Application
 metadata:
   name: app
+  annotations:
+    argocd.argoproj.io/tracking-id: app-app
 spec:
   name: app
   replicas: 1

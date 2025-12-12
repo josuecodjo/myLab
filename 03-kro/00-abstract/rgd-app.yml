@@ -28,6 +28,8 @@ spec:
         kind: Deployment
         metadata:
           name: ${schema.spec.name} # Use the name provided by user
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           replicas: ${schema.spec.replicas} # Use the replicas provided by user
           selector:
@@ -50,6 +52,8 @@ spec:
         kind: Service
         metadata:
           name: ${schema.spec.name}-svc
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           selector: ${deployment.spec.selector.matchLabels} # Use the deployment selector
           ports:
@@ -65,6 +69,8 @@ spec:
         kind: IngressRoute
         metadata:
           name: ${schema.spec.name}-ingress
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           entryPoints:
             - websecure
@@ -85,6 +91,8 @@ spec:
         kind: Certificate
         metadata:
           name: ${schema.spec.name}.home.lab
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           dnsNames:
             - ${schema.spec.name}.home.lab
