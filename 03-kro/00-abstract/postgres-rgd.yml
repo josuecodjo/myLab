@@ -8,6 +8,7 @@ spec:
     kind: PostgresInstance
     spec:
       dbName: string | default="mydb"
+      dbVersion: string | default="15-alpine"
       username: string | default="admin"
       # In a real scenario, you might want to auto-generate this if empty
       password: string | default="changeMe123!"
@@ -28,6 +29,8 @@ spec:
         metadata:
           name: ${schema.spec.dbName}-auth
           namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         stringData:
           POSTGRES_DB: ${schema.spec.dbName}
           POSTGRES_USER: ${schema.spec.username}
@@ -43,6 +46,8 @@ spec:
         metadata:
           name: ${schema.spec.dbName}-svc
           namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           ports:
             - port: 5432
@@ -58,6 +63,8 @@ spec:
         metadata:
           name: ${schema.spec.dbName}
           namespace: ${schema.spec.namespace}
+          annotations:
+            argocd.argoproj.io/tracking-id: ${schema.metadata.?annotations["argocd.argoproj.io/tracking-id"]}
         spec:
           selector:
             matchLabels:
@@ -71,7 +78,7 @@ spec:
             spec:
               containers:
                 - name: postgres
-                  image: postgres:15-alpine
+                  image: postgres:${schema.spec.dbVersion}
                   ports:
                     - containerPort: 5432
                   # Inject env vars directly from the secret we created above

@@ -9,4 +9,4 @@ spec:
   replicas: 2
   ingress:
     enabled: true
-  # namespace: web
+  namespace: web
