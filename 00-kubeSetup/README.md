@@ -3,7 +3,7 @@
 ### Add hosts entry
 
 ```sh
-echo "192.168.2.205    awx.home.lab argocd.home.lab kyverno.home.lab grafana.home.lab" | sudo tee -a /etc/hosts
+echo "192.168.2.205    awx.home.lab argocd.home.lab kyverno.home.lab grafana.home.lab kargo.home.lab" | sudo tee -a /etc/hosts
 ```
 
 ## Getting started
