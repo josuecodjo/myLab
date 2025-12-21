@@ -20,7 +20,7 @@ spec:
       source:
         repoURL: https://github.com/josuecodjo/kargo-demo.git
         targetRevision: HEAD
-        path: stage/{{stage}}
+        path: stages/{{stage}}
       destination:
         server: https://kubernetes.default.svc
         namespace: kargo-demo-{{stage}}
