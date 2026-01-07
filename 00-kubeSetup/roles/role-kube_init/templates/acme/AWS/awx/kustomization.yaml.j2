@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: awx
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: route53-credentials-secret
+    type: Opaque
+    literals:
+      - secret-access-key={{ aws_secret_access_key }}
+resources:
+  - issuer.yaml

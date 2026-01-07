@@ -59,3 +59,32 @@ sudo apt install git python3 python3-pip python3-venv curl -y
 
 - First begin with projet-homelab `ansible-playbook -i hosts_global playbook.yml -l stormy -t k3s-traefik,certmanager,argocd, awx`
 - Next with projet-awxconfig `ansible-playbook -i hosts_global playbook.yml -l stormy -t awxconfig,awxconfig-projet`
+
+## AWS hostedzoneID
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:aws:route53:::change/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ListHostedZonesByName",
+      "Resource": "*"
+    }
+  ]
+}
+
+```

@@ -24,7 +24,7 @@
     - block:
         - name: ArgoCD Install
           ansible.builtin.include_tasks: argocd/main.yml
-      tags: [argocd]
+      tags: [never, argocd]
 
     - block:
         - name: AWX Install

@@ -1,0 +1,23 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: awx-issuer
+spec:
+  acme:
+    email: josuecodjo@gmail.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: awx-issuer-account-key
+    solvers:
+      - dns01:
+          route53:
+            # The AWS Region the Route53 zone is in (usually us-east-1 for global, but strictly required)
+            region: ca-central-1
+            # Optional: If you have multiple zones with the same name, specify the ID
+            hostedZoneID: {{ hosted_zone_id }}
+            # The Public Access Key ID (Not the secret one)
+            accessKeyID: {{ aws_access_key_id }}
+            # Reference to the Secret containing the Secret Access Key
+            secretAccessKeySecretRef:
+              name: route53-credentials-secret
+              key: secret-access-key

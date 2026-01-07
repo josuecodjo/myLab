@@ -1,9 +1,10 @@
 ---
 # Global configs
 global_dns_name: home.lab
-
+# global_dns_name: softimiz-cloud.com
 # Acme mode
-acme_mode: Local
+acme_mode: LOCAL
+# acme_mode: AWS
 
 # AWX Config
 awx_hostname: awx
@@ -13,6 +14,10 @@ web_replicas: 1
 task_replicas: 1
 postgres_password: awxpostgrespass
 awx_projects_storage: 2Gi
+
+hosted_zone_id:
+aws_access_key_id:
+aws_secret_access_key:
 
 # ArgoCD
 argocd_hostname: argocd
