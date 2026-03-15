@@ -55,10 +55,21 @@ alias dclean='docker system prune -af'
 
 # Kubernetes shortcuts
 alias k='kubectl'
-alias kgp='kubectl get pods -o wide'
+alias ks='kubectl -n kube-system'
+alias kdesc='kubectl describe'
+alias kcf='kubectl create -f'
+alias kaf='kubectl apply -f'
+alias kgp='kubectl get pods'
+alias kgpa='kubectl get pods -A'
 alias klogs='kubectl logs -f'
 alias kgs='kubectl get svc'
-alias kgn='kubectl get nodes -o wide'
+alias kgd='kubectl get deploy'
+alias kgn='kubectl get nodes'
+alias kd='kubectl delete'
+alias kdp='kubectl delete pod'
+alias kds='kubectl delete svc'
+alias kdd='kubectl delete deploy'
+alias kdn='kubectl delete ns'
 
 # mulitpass
 alias mp='multipass'
