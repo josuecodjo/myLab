@@ -15,9 +15,9 @@ task_replicas: 1
 postgres_password: awxpostgrespass
 awx_projects_storage: 2Gi
 
-hosted_zone_id:
-aws_access_key_id:
-aws_secret_access_key:
+hosted_zone_id: changeme
+aws_access_key_id: changeme
+aws_secret_access_key: changeme
 
 # ArgoCD
 argocd_hostname: argocd
