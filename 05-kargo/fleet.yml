@@ -1,0 +1,184 @@
+# kargo-pipelines.yaml
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: backend-fleet
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fleet-infra-repo
+  namespace: backend-fleet
+  labels:
+    kargo.akuity.io/cred-type: git
+type: Opaque
+stringData:
+  repoURL: https://github.com/YOUR_GITHUB_USER/fleet-infra.git
+  username: YOUR_GITHUB_USER
+  password: YOUR_GITHUB_PAT
+---
+# === JAVA SPOKE ===
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: java-warehouse
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/nginx/nginx
+        imageSelectionStrategy: SemVer
+        semverConstraint: ">= 1.25.0"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: java-dev
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    warehouse: java-warehouse
+  promotionTemplate:
+    spec:
+      steps:
+        - uses: git-clone
+          config:
+            {
+              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              checkout: [{ branch: main, path: ./src }],
+            }
+        - uses: kustomize-set-image
+          config:
+            {
+              path: ./src/apps/java-service/dev,
+              images:
+                [
+                  {
+                    name: public.ecr.aws/nginx/nginx,
+                    newName: public.ecr.aws/nginx/nginx,
+                    newTag: "${{ image.tag }}",
+                  },
+                ],
+            }
+        - uses: git-commit
+          config: { path: ./src }
+        - uses: git-push
+          config: { path: ./src }
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: java-prod
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    upstreamStages: [{ name: java-dev }]
+  promotionTemplate:
+    spec:
+      steps:
+        - uses: git-clone
+          config:
+            {
+              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              checkout: [{ branch: main, path: ./src }],
+            }
+        - uses: kustomize-set-image
+          config:
+            {
+              path: ./src/apps/java-service/prod,
+              images:
+                [
+                  {
+                    name: public.ecr.aws/nginx/nginx,
+                    newName: public.ecr.aws/nginx/nginx,
+                    newTag: "${{ image.tag }}",
+                  },
+                ],
+            }
+        - uses: git-commit
+          config: { path: ./src }
+        - uses: git-push
+          config: { path: ./src }
+---
+# === PYTHON SPOKE ===
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: python-warehouse
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/docker/library/httpd
+        imageSelectionStrategy: SemVer
+        semverConstraint: ">= 2.4.55"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: python-dev
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    warehouse: python-warehouse
+  promotionTemplate:
+    spec:
+      steps:
+        - uses: git-clone
+          config:
+            {
+              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              checkout: [{ branch: main, path: ./src }],
+            }
+        - uses: kustomize-set-image
+          config:
+            {
+              path: ./src/apps/python-service/dev,
+              images:
+                [
+                  {
+                    name: public.ecr.aws/docker/library/httpd,
+                    newName: public.ecr.aws/docker/library/httpd,
+                    newTag: "${{ image.tag }}",
+                  },
+                ],
+            }
+        - uses: git-commit
+          config: { path: ./src }
+        - uses: git-push
+          config: { path: ./src }
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: python-prod
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    upstreamStages: [{ name: python-dev }]
+  promotionTemplate:
+    spec:
+      steps:
+        - uses: git-clone
+          config:
+            {
+              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              checkout: [{ branch: main, path: ./src }],
+            }
+        - uses: kustomize-set-image
+          config:
+            {
+              path: ./src/apps/python-service/prod,
+              images:
+                [
+                  {
+                    name: public.ecr.aws/docker/library/httpd,
+                    newName: public.ecr.aws/docker/library/httpd,
+                    newTag: "${{ image.tag }}",
+                  },
+                ],
+            }
+        - uses: git-commit
+          config: { path: ./src }
+        - uses: git-push
+          config: { path: ./src }
