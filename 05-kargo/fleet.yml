@@ -1,4 +1,3 @@
-# kargo-pipelines.yaml
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Project
 metadata:
@@ -17,7 +16,9 @@ stringData:
   username: josuecodjo
   password: YOUR_GITHUB_PAT
 ---
-# === JAVA SPOKE ===
+# ==========================================
+# JAVA SERVICE SPOKE
+# ==========================================
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
 metadata:
@@ -36,8 +37,13 @@ metadata:
   name: java-dev
   namespace: backend-fleet
 spec:
-  subscriptions:
-    warehouse: java-warehouse
+  # NEW SYNTAX: Replaces spec.subscriptions
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: java-warehouse
+      sources:
+        direct: true
   promotionTemplate:
     spec:
       steps:
@@ -71,8 +77,14 @@ metadata:
   name: java-prod
   namespace: backend-fleet
 spec:
-  subscriptions:
-    upstreamStages: [{ name: java-dev }]
+  # NEW SYNTAX: Production gets it from the dev stage
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: java-warehouse
+      sources:
+        stages:
+          - java-dev
   promotionTemplate:
     spec:
       steps:
@@ -99,8 +111,11 @@ spec:
           config: { path: ./src }
         - uses: git-push
           config: { path: ./src }
+
 ---
-# === PYTHON SPOKE ===
+# ==========================================
+# PYTHON SERVICE SPOKE
+# ==========================================
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
 metadata:
@@ -119,8 +134,13 @@ metadata:
   name: python-dev
   namespace: backend-fleet
 spec:
-  subscriptions:
-    warehouse: python-warehouse
+  # NEW SYNTAX
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: python-warehouse
+      sources:
+        direct: true
   promotionTemplate:
     spec:
       steps:
@@ -154,8 +174,14 @@ metadata:
   name: python-prod
   namespace: backend-fleet
 spec:
-  subscriptions:
-    upstreamStages: [{ name: python-dev }]
+  # NEW SYNTAX
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: python-warehouse
+      sources:
+        stages:
+          - python-dev
   promotionTemplate:
     spec:
       steps:
