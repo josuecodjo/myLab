@@ -28,8 +28,8 @@ spec:
   subscriptions:
     - image:
         repoURL: public.ecr.aws/nginx/nginx
-        imageSelectionStrategy: SemVer
-        semverConstraint: ">= 1.25.0"
+        constraint: ">= 1.25.0"
+        discoveryLimit: 2
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
@@ -125,8 +125,8 @@ spec:
   subscriptions:
     - image:
         repoURL: public.ecr.aws/docker/library/httpd
-        imageSelectionStrategy: SemVer
-        semverConstraint: ">= 2.4.55"
+        discoveryLimit: 2
+        constraint: ">= 2.4.55"
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
