@@ -1,4 +1,3 @@
-# argocd-appset.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -15,8 +14,7 @@ spec:
             exclude: true
   template:
     metadata:
-      # Automatically names them: java-service-dev, python-service-prod, etc.
-      name: "{{path.segments[1]}}-{{path.segments[2]}}"
+      name: "{{path[1]}}-{{path[2]}}"
     spec:
       project: default
       source:
@@ -25,8 +23,7 @@ spec:
         path: "{{path}}"
       destination:
         server: https://kubernetes.default.svc
-        # Automatically targets the 'dev' or 'prod' namespaces
-        namespace: "{{path.segments[2]}}"
+        namespace: "{{path[2]}}"
       syncPolicy:
         automated:
           prune: true
