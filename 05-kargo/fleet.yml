@@ -13,8 +13,8 @@ metadata:
     kargo.akuity.io/cred-type: git
 type: Opaque
 stringData:
-  repoURL: https://github.com/YOUR_GITHUB_USER/fleet-infra.git
-  username: YOUR_GITHUB_USER
+  repoURL: https://github.com/josuecodjo/0-fleet-infra.git
+  username: josuecodjo
   password: YOUR_GITHUB_PAT
 ---
 # === JAVA SPOKE ===
@@ -44,7 +44,7 @@ spec:
         - uses: git-clone
           config:
             {
-              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              repoURL: "https://github.com/josuecodjo/0-fleet-infra.git",
               checkout: [{ branch: main, path: ./src }],
             }
         - uses: kustomize-set-image
@@ -79,7 +79,7 @@ spec:
         - uses: git-clone
           config:
             {
-              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              repoURL: "https://github.com/josuecodjo/0-fleet-infra.git",
               checkout: [{ branch: main, path: ./src }],
             }
         - uses: kustomize-set-image
@@ -127,7 +127,7 @@ spec:
         - uses: git-clone
           config:
             {
-              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              repoURL: "https://github.com/josuecodjo/0-fleet-infra.git",
               checkout: [{ branch: main, path: ./src }],
             }
         - uses: kustomize-set-image
@@ -162,7 +162,7 @@ spec:
         - uses: git-clone
           config:
             {
-              repoURL: "https://github.com/YOUR_GITHUB_USER/fleet-infra.git",
+              repoURL: "https://github.com/josuecodjo/0-fleet-infra.git",
               checkout: [{ branch: main, path: ./src }],
             }
         - uses: kustomize-set-image
