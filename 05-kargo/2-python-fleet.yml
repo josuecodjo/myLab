@@ -1,0 +1,111 @@
+# ==========================================
+# PYTHON WAREHOUSE
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: python-warehouse
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/docker/library/httpd
+        discoveryLimit: 2
+        constraint: ">= 2.4.55"
+---
+# ==========================================
+# REUSABLE PROMOTION TASK (PYTHON)
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: python-promo-process
+  namespace: backend-fleet
+spec:
+  vars:
+    - name: gitopsRepo
+      value: https://github.com/josuecodjo/0-fleet-infra.git
+    - name: imageRepo
+      value: public.ecr.aws/docker/library/httpd
+    - name: appName
+      value: python-service
+  steps:
+    - uses: git-clone
+      config:
+        repoURL: ${{ vars.gitopsRepo }}
+        checkout:
+          - branch: ${{ vars.targetBranch }}
+            path: ./out
+    - uses: kustomize-set-image
+      as: update-image
+      config:
+        path: ./out/apps/${{ vars.appName }}/${{ vars.env }}
+        images:
+          - name: ${{ vars.imageRepo }}
+            newName: ${{ vars.imageRepo }}
+            newTag: ${{ imageFrom(vars.imageRepo).Tag }}
+    - uses: git-commit
+      as: commit
+      config:
+        path: ./out
+        message: "Promote ${{ vars.imageRepo }} to ${{ vars.appName }}-${{ vars.env }}"
+    - uses: git-push
+      config:
+        path: ./out
+    - uses: argocd-update
+      config:
+        apps:
+          - name: ${{ vars.appName }}-${{ vars.env }}
+            sources:
+              - repoURL: ${{ vars.gitopsRepo }}
+                desiredRevision: ${{ task.outputs.commit.commit }}
+---
+# ==========================================
+# PYTHON STAGES
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: python-dev
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: python-warehouse
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: python-promo-process
+          vars:
+            - name: env
+              value: dev
+            - name: targetBranch
+              value: develop
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: python-prod
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: python-warehouse
+      sources:
+        stages:
+          - python-dev
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: python-promo-process
+          vars:
+            - name: env
+              value: prod
+            - name: targetBranch
+              value: develop

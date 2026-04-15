@@ -1,0 +1,17 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: backend-fleet
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fleet-infra-repo
+  namespace: backend-fleet
+  labels:
+    kargo.akuity.io/cred-type: git
+type: Opaque
+stringData:
+  repoURL: https://github.com/josuecodjo/0-fleet-infra.git
+  username: josuecodjo
+  password: YOUR_GITHUB_PAT

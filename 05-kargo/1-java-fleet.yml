@@ -1,0 +1,111 @@
+# ==========================================
+# JAVA WAREHOUSE
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: java-warehouse
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/nginx/nginx
+        constraint: ">= 1.25.0"
+        discoveryLimit: 2
+---
+# ==========================================
+# REUSABLE PROMOTION TASK (JAVA)
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: java-promo-process
+  namespace: backend-fleet
+spec:
+  vars:
+    - name: gitopsRepo
+      value: https://github.com/josuecodjo/0-fleet-infra.git
+    - name: imageRepo
+      value: public.ecr.aws/nginx/nginx
+    - name: appName
+      value: java-service
+  steps:
+    - uses: git-clone
+      config:
+        repoURL: ${{ vars.gitopsRepo }}
+        checkout:
+          - branch: ${{ vars.targetBranch }}
+            path: ./out
+    - uses: kustomize-set-image
+      as: update-image
+      config:
+        path: ./out/apps/${{ vars.appName }}/${{ vars.env }}
+        images:
+          - name: ${{ vars.imageRepo }}
+            newName: ${{ vars.imageRepo }}
+            newTag: ${{ imageFrom(vars.imageRepo).Tag }}
+    - uses: git-commit
+      as: commit
+      config:
+        path: ./out
+        message: "Promote ${{ vars.imageRepo }} to ${{ vars.appName }}-${{ vars.env }}"
+    - uses: git-push
+      config:
+        path: ./out
+    - uses: argocd-update
+      config:
+        apps:
+          - name: ${{ vars.appName }}-${{ vars.env }}
+            sources:
+              - repoURL: ${{ vars.gitopsRepo }}
+                desiredRevision: ${{ task.outputs.commit.commit }}
+---
+# ==========================================
+# JAVA STAGES
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: java-dev
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: java-warehouse
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: java-promo-process
+          vars:
+            - name: env
+              value: dev
+            - name: targetBranch
+              value: develop
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: java-prod
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: java-warehouse
+      sources:
+        stages:
+          - java-dev
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: java-promo-process
+          vars:
+            - name: env
+              value: prod
+            - name: targetBranch
+              value: main
