@@ -65,7 +65,7 @@ spec:
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
-  name: python-dev
+  name: python-service-dev
   namespace: backend-fleet
 spec:
   requestedFreight:
@@ -88,7 +88,7 @@ spec:
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
-  name: python-prod
+  name: python-service-prod
   namespace: backend-fleet
 spec:
   requestedFreight:
