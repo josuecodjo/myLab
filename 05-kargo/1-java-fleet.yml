@@ -41,9 +41,8 @@ spec:
       config:
         path: ./out/apps/${{ vars.appName }}/${{ vars.env }}
         images:
-          - name: ${{ vars.imageRepo }}
-            newName: ${{ vars.imageRepo }}
-            newTag: ${{ imageFrom(vars.imageRepo).Tag }}
+          - image: ${{ vars.imageRepo }}
+            tag: ${{ imageFrom(vars.imageRepo).Tag }}
     - uses: git-commit
       as: commit
       config:
