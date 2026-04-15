@@ -97,7 +97,7 @@ spec:
         name: python-warehouse
       sources:
         stages:
-          - python-dev
+          - python-service-dev
   promotionTemplate:
     spec:
       steps:
