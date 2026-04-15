@@ -47,7 +47,7 @@ spec:
       as: commit
       config:
         path: ./out
-        message: "Promote ${{ vars.imageRepo }} to ${{ vars.appName }}-${{ vars.env }}"
+        message: "Promote ${{ vars.imageRepo }} version ${{ imageFrom(vars.imageRepo).Tag }} to ${{ vars.appName }}-${{ vars.env }}"
     - uses: git-push
       config:
         path: ./out
