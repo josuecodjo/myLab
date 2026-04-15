@@ -16,7 +16,7 @@ spec:
     metadata:
       name: "{{path[1]}}-{{path[2]}}"
       annotations:
-        kargo.akuity.io/authorized-stage: "{{path[1]}}:{{path[2]}}"
+        kargo.akuity.io/authorized-stage: "backend-fleet:{{path[1]}}-{{path[2]}}"
     spec:
       project: default
       source:
