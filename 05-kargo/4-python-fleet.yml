@@ -1,0 +1,72 @@
+# ==========================================
+# PYTHON WAREHOUSE
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: python-warehouse
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/docker/library/httpd
+        discoveryLimit: 2
+        constraint: ">= 2.4.55"
+---
+# ==========================================
+# PYTHON STAGES
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: python-service-dev
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: python-warehouse
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promo-process
+          vars:
+            - name: env
+              value: dev
+            - name: targetBranch
+              value: develop
+            - name: imageRepo
+              value: public.ecr.aws/docker/library/httpd
+            - name: appName
+              value: python-service
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: python-service-prod
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: python-warehouse
+      sources:
+        stages:
+          - python-service-dev
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promo-process
+          vars:
+            - name: env
+              value: prod
+            - name: targetBranch
+              value: develop
+            - name: imageRepo
+              value: public.ecr.aws/docker/library/httpd
+            - name: appName
+              value: python-service

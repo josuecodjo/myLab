@@ -1,0 +1,72 @@
+# ==========================================
+# JAVA WAREHOUSE
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: java-warehouse
+  namespace: backend-fleet
+spec:
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/nginx/nginx
+        constraint: ">= 1.25.0"
+        discoveryLimit: 2
+---
+# ==========================================
+# JAVA STAGES
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: java-service-dev
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: java-warehouse
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promo-process
+          vars:
+            - name: env
+              value: dev
+            - name: targetBranch
+              value: develop
+            - name: imageRepo
+              value: public.ecr.aws/nginx/nginx
+            - name: appName
+              value: java-service
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: java-service-prod
+  namespace: backend-fleet
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: java-warehouse
+      sources:
+        stages:
+          - java-service-dev
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promo-process
+          vars:
+            - name: env
+              value: prod
+            - name: targetBranch
+              value: main
+            - name: imageRepo
+              value: public.ecr.aws/nginx/nginx
+            - name: appName
+              value: java-service

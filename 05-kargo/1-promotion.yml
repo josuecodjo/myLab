@@ -1,0 +1,41 @@
+# ==========================================
+# REUSABLE PROMOTION TASK
+# ==========================================
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: promo-process
+  namespace: backend-fleet
+spec:
+  vars:
+    - name: gitopsRepo
+      value: https://github.com/josuecodjo/0-fleet-infra.git
+  steps:
+    - uses: git-clone
+      config:
+        repoURL: ${{ vars.gitopsRepo }}
+        checkout:
+          - branch: ${{ vars.targetBranch }}
+            path: ./out
+    - uses: kustomize-set-image
+      as: update-image
+      config:
+        path: ./out/apps/${{ vars.appName }}/${{ vars.env }}
+        images:
+          - image: ${{ vars.imageRepo }}
+            tag: ${{ imageFrom(vars.imageRepo).Tag }}
+    - uses: git-commit
+      as: commit
+      config:
+        path: ./out
+        message: "Promote ${{ vars.imageRepo }} version ${{ imageFrom(vars.imageRepo).Tag }} to ${{ vars.appName }}-${{ vars.env }}"
+    - uses: git-push
+      config:
+        path: ./out
+    - uses: argocd-update
+      config:
+        apps:
+          - name: ${{ vars.appName }}-${{ vars.env }}
+            sources:
+              - repoURL: ${{ vars.gitopsRepo }}
+                desiredRevision: ${{ task.outputs.commit.commit }}
