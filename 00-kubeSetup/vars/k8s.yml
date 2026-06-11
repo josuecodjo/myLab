@@ -3,7 +3,7 @@
 global_dns_name: home.lab
 # global_dns_name: softimiz-cloud.com
 # Acme mode
-acme_mode: LOCAL
+acme_mode: Local
 # acme_mode: AWS
 
 # AWX Config
