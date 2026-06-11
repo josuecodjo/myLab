@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tools
+  namespace: argocd
+spec:
+  description: "Tools project with default allow-all specs"
+  # Allow all source repositories
+  sourceRepos:
+    - '*'
+  # Allow deployment to all destination clusters and namespaces
+  destinations:
+    - namespace: '*'
+      server: '*'
+  # Allow all cluster-scoped resources to be created
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'

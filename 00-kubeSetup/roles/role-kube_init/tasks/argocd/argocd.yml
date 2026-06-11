@@ -62,6 +62,7 @@
     src: "argocd/{{ item }}"
     dest: "{{ v_global_install_path }}/argocd/{{ item }}"
   loop:
+    - tools-project.yml
     - bootstrap.yml
 
 - name: Appliquer la configuration ACME sur K3S
