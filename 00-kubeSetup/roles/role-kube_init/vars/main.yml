@@ -6,4 +6,4 @@ v_awx_chart_version: 3.2.0
 v_certmanager_chart_version: 1.20.2
 v_awx_install_path: /opt/k8s
 v_global_install_path: /opt/kubeinit
-v_argocd_chart_version: 9.5.0
+v_argocd_chart_version: 10.4.0
