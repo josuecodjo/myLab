@@ -1,9 +1,9 @@
 ---
 # vars file for awx
 
-v_k3s_version: v1.36.1+k3s1
+v_k3s_version: v1.37.2+k3s1
 v_awx_chart_version: 3.2.0
-v_certmanager_chart_version: 1.20.2
+v_certmanager_chart_version: v1.21.3
 v_awx_install_path: /opt/k8s
 v_global_install_path: /opt/kubeinit
-v_argocd_chart_version: 10.4.0
+v_argocd_chart_version: 10.18.0
