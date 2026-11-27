@@ -27,10 +27,26 @@ spec:
     helm:
       valueFiles:
         - values.yaml
+  ignoreDifferences:
+    # Argo CD manages finalizers on the child Applications itself. Any chart
+    # shipping a `helm.sh/hook: pre-delete` resource - the Vault Secrets
+    # Operator chart does - becomes an Argo CD PreDelete hook, and Argo CD then
+    # adds `pre-delete-finalizer.argocd.argoproj.io` and `.../cleanup` to that
+    # child Application so the hook is guaranteed to run. Git declares only
+    # `resources-finalizer`, so the finalizer array differs forever: base-apps
+    # sits permanently OutOfSync while selfHeal keeps trying to strip them.
+    # Nothing is ever reconciled from git here, so ignore the field outright.
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /metadata/finalizers
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
       - ApplyOutOfSyncOnly=true
+      # Required for ignoreDifferences above to be honoured during sync, not
+      # just when computing the diff.
+      - RespectIgnoreDifferences=true
     automated:
       # Retries failed attempts 5 times with delays 5s, 10s, 20s, 40s, 80s.
       prune: true      # Remove resources that disappear from git.
