@@ -191,11 +191,29 @@ argocd_env: ""                  # "" | dev | qa | prod  (see step 6)
 `LOCAL` issues self-signed certificates — right for a homelab. `AWS` and `Azure`
 use DNS-01 and need the credential fields in `vars/k8s.yml` filled in.
 
-**3c. Add a DNS entry** so the ingress hostname resolves. On your laptop:
+**3c. Add DNS entries** so the ingress hostnames resolve. `global_dns_name` is
+the single suffix for the whole cluster — Ansible builds the Argo CD host from it
+*and* hands it to the base-apps chart, which expands it into every component's
+ingress host and TLS SAN. Change it once and everything follows.
 
 ```bash
-echo "<target-ip>  argocd.home.lab" | sudo tee -a /etc/hosts
+# one line per component you enable
+for h in argocd rollouts kargo kyverno grafana keycloak; do
+  echo "<target-ip>  $h.home.lab" | sudo tee -a /etc/hosts
+done
 ```
+
+| Component | Host | Enabled by default |
+|---|---|---|
+| Argo CD | `argocd.<domain>` | yes |
+| Argo Rollouts dashboard | `rollouts.<domain>` | yes |
+| Kargo UI | `kargo.<domain>` | yes |
+| Policy Reporter UI | `kyverno.<domain>` | with the `dev`/`qa`/`prod` overlay |
+| Grafana | `grafana.<domain>` | no |
+| Keycloak | `keycloak.<domain>` | no |
+
+A wildcard `*.home.lab` entry in your own resolver (dnsmasq, Pi-hole) saves
+maintaining the list.
 
 **3d. Check connectivity** before provisioning:
 
@@ -381,6 +399,83 @@ helm template base-apps base-apps -f base-apps/values.yaml
 helm template base-apps base-apps -f base-apps/values.yaml -f base-apps/values-dev.yaml
 ```
 
+### Changing the DNS domain
+
+One variable drives every hostname:
+
+```
+vars/k8s.yml: global_dns_name
+      │
+      ├─► argocd_hostname + global_dns_name  ──► Argo CD ingress + TLS
+      │
+      └─► bootstrap.yml.j2 helm parameter `global.dnsName`
+                 │
+                 └─► base-apps chart ──► templatedValues ──► each component's
+                                          ingress host + TLS SAN
+```
+
+To move a cluster to a different domain, set `global_dns_name`, re-run
+`--tags argocd`, and update DNS. Nothing else changes — the certificates are not
+pinned to a domain (see below), and no hostname is hardcoded in `app_charts/`.
+
+Per-component subdomains live in the `templatedValues` block of each catalog
+entry, because the five charts each use a different ingress schema
+(`api.host`, `ingress.hostname`, `dashboard.ingress.hosts[]`,
+`ui.ingress.hosts[].host`, `grafana.ingress.hosts[]`).
+
+> **`extraValues` vs `templatedValues`** — `templatedValues` is rendered through
+> Helm's `tpl`, so it can reference `{{ .Values.global.dnsName }}`.
+> `extraValues` is passed through verbatim; keep anything containing literal Go
+> template syntax (Alertmanager templates, Falco rules, Grafana dashboards)
+> there, or `tpl` will try to evaluate it and fail.
+
+### About the TLS certificates
+
+The certificates are **not** tied to `home.lab`. `local-cluster-issuer` is a
+`selfSigned` ClusterIssuer — it contains no DNS name at all. cert-manager's
+ingress-shim reads each Ingress's `tls[].hosts` and mints a certificate with
+exactly those SANs, so a new domain just produces new certificates on the next
+sync. The same issuer works unchanged on any other cluster.
+
+The trade-off is that `selfSigned` makes every certificate its own root, so each
+hostname throws a separate browser warning and there is nothing you can trust
+once. For a lab that serves several UIs, a local CA is nicer: bootstrap a CA
+certificate from the self-signed issuer, then issue everything from a `ca`
+ClusterIssuer and trust that single root on your laptop.
+
+```yaml
+# a sketch - replaces templates/acme/LOCAL/global/issuer.yaml.j2
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "{{ global_dns_name }} local CA"
+  secretName: homelab-ca-tls
+  privateKey: { algorithm: ECDSA, size: 256 }
+  issuerRef: { name: selfsigned-bootstrap, kind: ClusterIssuer }
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: local-cluster-issuer     # same name, so no ingress annotation changes
+spec:
+  ca:
+    secretName: homelab-ca-tls
+```
+
+Keeping the name `local-cluster-issuer` means none of the
+`cert-manager.io/cluster-issuer` annotations in `app_charts/` need to change.
+
 ### Per-app keys — `charts:`
 
 | Key | Effect |
@@ -392,7 +487,8 @@ helm template base-apps base-apps -f base-apps/values.yaml -f base-apps/values-d
 | `chartName` | Chart name and `app_charts/` directory (default: the key) |
 | `serverSideApply` | Adds `ServerSideApply=true` — needed for large CRDs |
 | `autosync_enabled` | Set `false` to drop `syncPolicy` entirely |
-| `extraValues` | Inline values merged over the `app_charts` file |
+| `extraValues` | Inline values merged over the `app_charts` file, verbatim |
+| `templatedValues` | Same, but rendered with `tpl` first — use for `global.dnsName` |
 
 OCI-hosted charts (kro, Kargo) must use the `oci://` scheme in `repoURL`.
 
@@ -587,8 +683,14 @@ entry in `values.yaml`. Already set for `kyverno` and `kube-prometheus-stack`.
 check the child Application's finalizer actually ran:
 `kubectl get application <name> -n argocd -o yaml`.
 
-**Ingress hostname doesn't resolve.** Add `<target-ip> argocd.home.lab` to
-`/etc/hosts`, or port-forward (step 5).
+**Ingress hostname doesn't resolve.** Add `<target-ip> <host>.home.lab` to
+`/etc/hosts` for each component you enabled (step 3c), or port-forward (step 5).
+
+**`acme_mode: AWS` doesn't give you Let's Encrypt.** `templates/acme/AWS/global/issuer.yaml.j2`
+is byte-identical to the LOCAL one — both are `selfSigned`. Only the `awx/`
+variants carry real DNS-01 solvers. `acme_mode: Azure` fails outright: the task
+looks for `acme/Azure/global/issuer.yaml.j2` and only `acme/Azure/issuer.yaml.j2`
+exists. Treat LOCAL as the only working mode until those are filled in.
 
 **Changes don't appear.** Argo CD polls every 3 minutes. Click **Refresh** on the
 `base-apps` app, or `argocd app get base-apps --refresh`.
@@ -609,6 +711,14 @@ Honest list of what this setup does *not* do yet:
 - **`04-ArgoCD/` is applied imperatively.** Those ApplicationSets aren't owned by
   any Application, so they drift and never prune. Folding them into the
   `base-apps` chart would close the loop.
-- **Secrets are in plaintext** in the Ansible vars and the Kargo manifests. Use
-  `ansible-vault` and External Secrets.
+- **Secrets are in plaintext** in the Ansible vars, the Kargo manifests, and
+  `app_charts/kargo/values.yaml` (admin password hash + token signing key) and
+  `app_charts/keycloak/values.yaml` (admin/admin). Use `ansible-vault` and
+  External Secrets.
+- **`acme_mode` AWS and Azure are not wired up** — AWS is a copy of the
+  self-signed LOCAL issuer and Azure has no `global/` template. See
+  Troubleshooting.
+- **`local-cluster-issuer` is `selfSigned`,** so every hostname gets its own
+  untrusted root. A `ca` ClusterIssuer bootstrapped from it would let you trust
+  one local CA instead (sketch in step 6).
 - **Single node, no backups.** No etcd snapshots, no PV backup strategy.
