@@ -27,8 +27,8 @@ v_argocd_chart_version: 8.0.17
 # Global configs
 global_dns_name: home.lab
 
-# Acme mode
-acme_mode: Local # AWS, Azure
+# Acme mode - must match a directory under templates/acme/ (case-sensitive)
+acme_mode: LOCAL # LOCAL, AWS, Azure
 
 # Azure_config
 subscriptionid: ""

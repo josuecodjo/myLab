@@ -40,5 +40,34 @@
 - name: Appliquer la configuration ACME sur K3S
   command: kubectl apply -k {{ v_global_install_path }}/acme/{{ acme_mode }}
 
+- name: Wait for the lab root CA to be issued
+  command: >
+    kubectl wait --for=condition=Ready certificate/homelab-ca
+    -n cert-manager --timeout=300s
+  changed_when: false
+
 - name: Wait for Cluster issuer to be ready
   command: kubectl wait --for=condition=Ready clusterissuers/local-cluster-issuer --timeout=300s
+  changed_when: false
+
+- name: Export the lab root CA on the node
+  shell: >
+    kubectl get secret homelab-ca-tls -n cert-manager
+    -o jsonpath='{.data.tls\.crt}' | base64 -d
+    > {{ v_global_install_path }}/acme/homelab-ca.crt
+  changed_when: false
+
+- name: Fetch the lab root CA to the control node
+  fetch:
+    src: "{{ v_global_install_path }}/acme/homelab-ca.crt"
+    dest: "{{ playbook_dir }}/homelab-ca.crt"
+    flat: true
+
+- name: Show how to trust the lab root CA
+  debug:
+    msg:
+      - "Root CA written to {{ playbook_dir }}/homelab-ca.crt on this machine."
+      - "macOS:  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain homelab-ca.crt"
+      - "Linux:  sudo cp homelab-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates"
+      - "Firefox uses its own store: Settings -> Privacy & Security -> Certificates -> View Certificates -> Authorities -> Import"
+

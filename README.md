@@ -184,9 +184,10 @@ argocd_env: ""                  # "" | dev | qa | prod  (see step 6)
 ```
 
 > `acme_mode` must exactly match a directory name under
-> `roles/role-kube_init/templates/acme/` (`LOCAL`, `AWS`, `Azure`). The value was
-> previously `Local`, which only resolved on case-insensitive filesystems like
-> macOS and broke on a Linux control node.
+> `roles/role-kube_init/templates/acme/` — `LOCAL`, `AWS` or `Azure`. This is
+> case-sensitive on a Linux control node. The directory was tracked in git as
+> `Local` while macOS reported it as `LOCAL`; git's `core.ignorecase` hid the
+> mismatch. Both git and disk now say `LOCAL`, matching this variable.
 
 `LOCAL` issues self-signed certificates — right for a homelab. `AWS` and `Azure`
 use DNS-01 and need the credential fields in `vars/k8s.yml` filled in.
@@ -431,50 +432,67 @@ entry, because the five charts each use a different ingress schema
 
 ### About the TLS certificates
 
-The certificates are **not** tied to `home.lab`. `local-cluster-issuer` is a
-`selfSigned` ClusterIssuer — it contains no DNS name at all. cert-manager's
-ingress-shim reads each Ingress's `tls[].hosts` and mints a certificate with
-exactly those SANs, so a new domain just produces new certificates on the next
-sync. The same issuer works unchanged on any other cluster.
+The certificates are **not** tied to `home.lab`. The chain has no DNS name in it
+anywhere — cert-manager's ingress-shim reads each Ingress's `tls[].hosts` and
+mints a certificate with exactly those SANs. Change `global_dns_name`, re-run,
+and you get new certificates for the new domain. The same chain works unchanged
+on any other cluster.
 
-The trade-off is that `selfSigned` makes every certificate its own root, so each
-hostname throws a separate browser warning and there is nothing you can trust
-once. For a lab that serves several UIs, a local CA is nicer: bootstrap a CA
-certificate from the self-signed issuer, then issue everything from a `ca`
-ClusterIssuer and trust that single root on your laptop.
+`acme_mode: LOCAL` builds a **local certificate authority** rather than a pile of
+unrelated self-signed certs:
 
-```yaml
-# a sketch - replaces templates/acme/LOCAL/global/issuer.yaml.j2
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: selfsigned-bootstrap
-spec:
-  selfSigned: {}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: homelab-ca
-  namespace: cert-manager
-spec:
-  isCA: true
-  commonName: "{{ global_dns_name }} local CA"
-  secretName: homelab-ca-tls
-  privateKey: { algorithm: ECDSA, size: 256 }
-  issuerRef: { name: selfsigned-bootstrap, kind: ClusterIssuer }
----
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: local-cluster-issuer     # same name, so no ingress annotation changes
-spec:
-  ca:
-    secretName: homelab-ca-tls
+```
+selfsigned-bootstrap (ClusterIssuer)   signs only the CA below
+         │
+         ▼
+homelab-ca (Certificate, isCA: true)   the lab root CA
+         │                             -> secret homelab-ca-tls in cert-manager
+         ▼
+local-cluster-issuer (ClusterIssuer)   signs every component's certificate
 ```
 
-Keeping the name `local-cluster-issuer` means none of the
-`cert-manager.io/cluster-issuer` annotations in `app_charts/` need to change.
+Trust `homelab-ca` once on your workstation and every `*.<domain>` certificate in
+the cluster is valid — no more per-hostname browser warnings. The final issuer
+keeps the name `local-cluster-issuer`, so none of the
+`cert-manager.io/cluster-issuer` annotations in `app_charts/` change.
+
+The playbook writes the root CA to `00-kubeSetup/homelab-ca.crt` on your control
+node and prints how to trust it:
+
+```bash
+# macOS
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain homelab-ca.crt
+
+# Debian / Ubuntu
+sudo cp homelab-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+```
+
+Firefox keeps its own trust store: Settings → Privacy & Security → Certificates →
+View Certificates → Authorities → Import.
+
+The CA is valid for 10 years and renews a year before expiry, so trusting it is a
+one-time action per workstation.
+
+#### Migrating an existing cluster
+
+If your cluster already ran the old self-signed `local-cluster-issuer`, switching
+the issuer does **not** re-sign existing certificates — they stay valid until
+their own renewal, so they keep showing browser warnings. Force a re-issue by
+deleting the secrets of the certificates that use this issuer:
+
+```bash
+kubectl get certificates -A \
+  -o jsonpath='{range .items[?(@.spec.issuerRef.name=="local-cluster-issuer")]}{.metadata.namespace}{" "}{.spec.secretName}{"\n"}{end}' \
+| sed '/^$/d' | while read ns secret; do kubectl delete secret -n "$ns" "$secret"; done
+```
+
+cert-manager reissues each one within seconds, now signed by the lab CA. The
+filter matters: it deliberately skips certificates owned by other issuers, such
+as Kargo's internal `kargo-selfsigned-cert-issuer` webhook certs, which are part
+of Kargo's own TLS and must not be touched.
+
+Expect a few seconds of TLS errors per host while each secret is recreated.
 
 ### Per-app keys — `charts:`
 
@@ -687,10 +705,23 @@ check the child Application's finalizer actually ran:
 `/etc/hosts` for each component you enabled (step 3c), or port-forward (step 5).
 
 **`acme_mode: AWS` doesn't give you Let's Encrypt.** `templates/acme/AWS/global/issuer.yaml.j2`
-is byte-identical to the LOCAL one — both are `selfSigned`. Only the `awx/`
-variants carry real DNS-01 solvers. `acme_mode: Azure` fails outright: the task
-looks for `acme/Azure/global/issuer.yaml.j2` and only `acme/Azure/issuer.yaml.j2`
-exists. Treat LOCAL as the only working mode until those are filled in.
+is a bare `selfSigned` ClusterIssuer — it never had a DNS-01 solver, and it did
+not get the CA chain that LOCAL now has. Only the `awx/` variants carry real
+DNS-01 config. `acme_mode: Azure` fails outright: the task looks for
+`acme/Azure/global/issuer.yaml.j2` and only `acme/Azure/issuer.yaml.j2` exists.
+Treat LOCAL as the only working mode until those are filled in.
+
+**Browser still warns after enabling the CA.** Two causes. Either you haven't
+trusted `homelab-ca.crt` yet (step 6), or the certificate predates the switch —
+existing certs are not re-signed automatically; see *Migrating an existing
+cluster*. Check which issuer signed what with
+`kubectl get certificate -A -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.spec.issuerRef.name`.
+
+**`local-cluster-issuer` never becomes Ready.** It is a `ca` issuer now, so it
+needs the `homelab-ca-tls` secret in cert-manager's cluster-resource-namespace.
+That namespace follows cert-manager's own (`cert-manager`) unless you changed
+`--cluster-resource-namespace`. Check the CA first:
+`kubectl describe certificate homelab-ca -n cert-manager`.
 
 **Changes don't appear.** Argo CD polls every 3 minutes. Click **Refresh** on the
 `base-apps` app, or `argocd app get base-apps --refresh`.
@@ -715,10 +746,8 @@ Honest list of what this setup does *not* do yet:
   `app_charts/kargo/values.yaml` (admin password hash + token signing key) and
   `app_charts/keycloak/values.yaml` (admin/admin). Use `ansible-vault` and
   External Secrets.
-- **`acme_mode` AWS and Azure are not wired up** — AWS is a copy of the
-  self-signed LOCAL issuer and Azure has no `global/` template. See
+- **`acme_mode` AWS and Azure are not wired up.** Only LOCAL builds a real
+  chain (self-signed bootstrap → lab CA → issuer). AWS is still a bare
+  `selfSigned` ClusterIssuer and Azure has no `global/` template at all. See
   Troubleshooting.
-- **`local-cluster-issuer` is `selfSigned`,** so every hostname gets its own
-  untrusted root. A `ca` ClusterIssuer bootstrapped from it would let you trust
-  one local CA instead (sketch in step 6).
 - **Single node, no backups.** No etcd snapshots, no PV backup strategy.
