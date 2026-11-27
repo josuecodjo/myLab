@@ -25,9 +25,10 @@ Argo CD creates the rest.
 11. [Step 8 — kro abstractions](#step-8--kro-abstractions)
 12. [Step 9 — Kargo promotion pipeline](#step-9--kargo-promotion-pipeline)
 13. [Step 10 — Validate the security stack](#step-10--validate-the-security-stack)
-14. [Teardown](#teardown)
-15. [Troubleshooting](#troubleshooting)
-16. [Known gaps](#known-gaps)
+14. [Step 11 — Vault](#step-11--vault-optional-needs-manual-initialisation)
+15. [Teardown](#teardown)
+16. [Troubleshooting](#troubleshooting)
+17. [Known gaps](#known-gaps)
 
 ---
 
@@ -212,6 +213,7 @@ done
 | Policy Reporter UI | `kyverno.<domain>` | with the `dev`/`qa`/`prod` overlay |
 | Grafana | `grafana.<domain>` | no |
 | Keycloak | `keycloak.<domain>` | no |
+| Vault | `vault.<domain>` | no — enable deliberately, see step 11 |
 
 A wildcard `*.home.lab` entry in your own resolver (dnsmasq, Pi-hole) saves
 maintaining the list.
@@ -508,7 +510,18 @@ Expect a few seconds of TLS errors per host while each secret is recreated.
 | `extraValues` | Inline values merged over the `app_charts` file, verbatim |
 | `templatedValues` | Same, but rendered with `tpl` first — use for `global.dnsName` |
 
-OCI-hosted charts (kro, Kargo) must use the `oci://` scheme in `repoURL`.
+> **OCI-hosted charts (kro, Kargo) use the bare host — no `oci://` scheme.**
+> Argo CD has two modes. A bare host plus `chart` means "Helm chart in an OCI
+> registry" and resolves as `<repoURL>/<chart>:<targetRevision>`. Adding `oci://`
+> switches it to OCI-artifact mode, where `repoURL` is the *complete* reference
+> and `chart` is ignored, so the chart segment never gets appended and you get:
+>
+> ```
+> failed to resolve revision "1.12.5": cannot get digest for revision 1.12.5:
+> HEAD "https://ghcr.io/v2/akuity/kargo-charts/manifests/1.12.5": 403 denied
+> ```
+>
+> Note the missing `/kargo` in that URL. Verified on Argo CD v3.6.1.
 
 ### Per-app keys — `apps:`
 
@@ -663,6 +676,92 @@ kubectl exec -it good-pod -- cat /etc/shadow
 
 ---
 
+## Step 11 — Vault (optional, needs manual initialisation)
+
+Vault ships `enabled: false` in the catalog because Argo CD can install it but
+**cannot initialise it**. This step is the one place in the lab where GitOps
+genuinely cannot finish the job.
+
+**11a. Enable the two charts** in `argocd-apps/base-apps/values.yaml`:
+
+```yaml
+charts:
+  vault:
+    enabled: true                  # wave 3
+  vault-secrets-operator:
+    enabled: true                  # wave 0
+```
+
+Push, and wait for the `vault` Application to appear. It will sit **Progressing,
+not Healthy** — that is expected. The chart's readiness probe is `vault status`,
+which fails while Vault is sealed, so the pod never becomes Ready. Vault is in
+the last sync wave precisely so this cannot stall anything else.
+
+**11b. Initialise once per cluster:**
+
+```bash
+kubectl exec -n vault vault-0 -- vault operator init -key-shares=5 -key-threshold=3
+```
+
+> Save the 5 unseal keys and the root token **outside the cluster** now. There is
+> no recovery path. Note also that `local-path` uses a `Delete` reclaim policy, so
+> losing the PVC loses the data even if you still hold the keys.
+
+**11c. Unseal — 3 of the 5 keys:**
+
+```bash
+for i in 1 2 3; do kubectl exec -ti -n vault vault-0 -- vault operator unseal; done
+kubectl get pod -n vault vault-0        # now 1/1 Running, app goes Healthy
+```
+
+**11d. Enable Kubernetes auth** so VSO can authenticate without any stored
+credential:
+
+```bash
+kubectl exec -ti -n vault vault-0 -- sh
+  export VAULT_TOKEN=<root token>
+  vault auth enable kubernetes
+  vault write auth/kubernetes/config \
+      kubernetes_host=https://kubernetes.default.svc
+
+  vault policy write vso-demo - <<'EOF'
+path "secret/data/demo" { capabilities = ["read"] }
+EOF
+
+  vault write auth/kubernetes/role/vso-demo \
+      bound_service_account_names=vault-demo \
+      bound_service_account_namespaces=vault-secrets-operator \
+      policies=vso-demo ttl=1h
+
+  vault kv put secret/demo message=hello
+```
+
+AppRole would have needed a role-id/secret-id pair planted in the cluster first —
+a secret in order to fetch secrets. Kubernetes auth avoids that: Vault validates
+VSO's ServiceAccount token via `TokenReview`, which is why the chart's
+`server.authDelegator` must stay enabled.
+
+**11e. Prove the chain**, by enabling `apps.vault-config` and syncing it by hand
+(it has `autosync_enabled: false`, since it can only succeed after the steps
+above):
+
+```bash
+argocd app sync vault-config          # or Sync in the UI
+kubectl get secret vault-demo -n vault-secrets-operator \
+  -o jsonpath='{.data.message}' | base64 -d        # -> hello
+```
+
+That confirms `VaultAuth` → Kubernetes auth → KV v2 → Kubernetes Secret. Delete
+the demo `VaultStaticSecret` afterwards; it is scaffolding, not a fixture.
+
+**After every reboot:** Vault re-seals, so repeat 11c. Until you do, the `vault`
+app is Progressing and the root `base-apps` app shows not-Healthy — everything
+else stays synced and unaffected. If that becomes tiresome, the alternative is
+storing unseal keys in a Secret with a Job that unseals on start, which trades
+away much of Vault's threat model.
+
+---
+
 ## Teardown
 
 ```bash
@@ -690,9 +789,23 @@ task is skipped without error.
 directory under `templates/acme/`. It must be `LOCAL`, `AWS` or `Azure` —
 case-sensitive on a Linux control node.
 
-**Argo CD app stuck `Unknown` / repo errors on kro or Kargo.** OCI chart repos
-need the `oci://` scheme in `repoURL`. Bare `ghcr.io/...` only works if the
-repository was registered separately with `enableOCI: true`.
+**Argo CD app stuck `Unknown` with `failed to resolve revision` on kro or Kargo.**
+The `repoURL` has an `oci://` scheme. Remove it — use the bare host
+(`ghcr.io/akuity/kargo-charts`) so Argo CD appends `chart` and resolves
+`<repoURL>/<chart>:<targetRevision>`. With `oci://`, `chart` is ignored and the
+chart segment never makes it into the request, which ghcr.io answers with
+`403 denied` (it does not distinguish "no such repository" from "no access").
+Confirm the real reference resolves first:
+
+```bash
+helm show chart oci://ghcr.io/akuity/kargo-charts/kargo --version 1.12.5
+helm show chart oci://registry.k8s.io/kro/charts/kro    --version 0.10.0
+```
+
+The app can report `Healthy` while sync is `Unknown`: health describes the
+resources already in the cluster, so a fresh app with nothing deployed looks
+healthy even though the comparison is failing. Check
+`kubectl get app -n argocd <name> -o jsonpath='{.status.conditions}'`.
 
 **CRD too large / annotation size errors.** Set `serverSideApply: true` on that
 entry in `values.yaml`. Already set for `kyverno` and `kube-prometheus-stack`.
@@ -723,8 +836,9 @@ That namespace follows cert-manager's own (`cert-manager`) unless you changed
 `--cluster-resource-namespace`. Check the CA first:
 `kubectl describe certificate homelab-ca -n cert-manager`.
 
-**Changes don't appear.** Argo CD polls every 3 minutes. Click **Refresh** on the
-`base-apps` app, or `argocd app get base-apps --refresh`.
+**Changes don't appear.** Argo CD reconciles every 2 minutes
+(`timeout.reconciliation: 120s`). Click **Refresh** on the `base-apps` app, or
+`argocd app get base-apps --refresh`.
 
 ---
 
@@ -732,11 +846,6 @@ That namespace follows cert-manager's own (`cert-manager`) unless you changed
 
 Honest list of what this setup does *not* do yet:
 
-- **No sync waves.** Every child Application syncs concurrently, so CRD-before-CR
-  ordering relies on Argo CD's retries rather than explicit
-  `argocd.argoproj.io/sync-wave` annotations. The `apps.kyverno-policy` entry is
-  the clearest case: its ClusterPolicies need the `charts.kyverno` CRDs to exist
-  first, which is why it ships disabled and you enable it as a second step.
 - **The `tools` AppProject allows everything** — `sourceRepos: ['*']`,
   all destinations, all cluster resources. It enforces no guardrails today.
 - **`04-ArgoCD/` is applied imperatively.** Those ApplicationSets aren't owned by

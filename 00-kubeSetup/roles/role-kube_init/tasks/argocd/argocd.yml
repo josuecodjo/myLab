@@ -21,7 +21,30 @@
           argocdServerAdminPassword: "$2y$10$6JOwwFWeY6gMvv4ARt6qD.Qq74hK08xzrsEH2aIrrX9WFn9fS1TQC"
         params:
           server.insecure: true
+      # Expose each component's Prometheus metrics Service.
+      #
+      # Only `metrics.enabled`, NOT `metrics.serviceMonitor.enabled`. The former
+      # creates a Service and needs no CRD. The latter creates a ServiceMonitor,
+      # and the chart gates that on the monitoring.coreos.com/v1 CRD existing -
+      # which it does not here, because this task installs Argo CD and Argo CD
+      # only later installs kube-prometheus-stack. It would render nothing and
+      # fail silently. The ServiceMonitors ship from argocd-apps instead, in
+      # declarative/apps/monitoring-extras (sync wave 2).
+      controller:
+        metrics:
+          enabled: true
+      repoServer:
+        metrics:
+          enabled: true
+      applicationSet:
+        metrics:
+          enabled: true
+      notifications:
+        metrics:
+          enabled: true
       server:
+        metrics:
+          enabled: true
         ingress:
           enabled: true
           annotations:

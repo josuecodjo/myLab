@@ -1,6 +1,6 @@
 ---
 # Global configs
-global_dns_name: home.lab
+global_dns_name: prod.lab
 # global_dns_name: softimiz-cloud.com
 # Acme mode - must match a directory under
 # roles/role-kube_init/templates/acme/ (LOCAL, AWS, Azure). Case-sensitive.
