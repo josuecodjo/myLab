@@ -2,8 +2,9 @@
 # Global configs
 global_dns_name: home.lab
 # global_dns_name: softimiz-cloud.com
-# Acme mode
-acme_mode: Local
+# Acme mode - must match a directory under
+# roles/role-kube_init/templates/acme/ (LOCAL, AWS, Azure). Case-sensitive.
+acme_mode: LOCAL
 # acme_mode: AWS
 
 # AWX Config
@@ -21,3 +22,7 @@ aws_secret_access_key: changeme
 
 # ArgoCD
 argocd_hostname: argocd
+
+# Which base-apps overlay the root app-of-apps should layer on values.yaml.
+# "" = catalog defaults only. Options: dev, qa, prod.
+argocd_env: ""

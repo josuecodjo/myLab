@@ -1,3 +1,13 @@
+# Manual fallback for the root "app of apps".
+#
+# The normal path is Ansible: role-kube_init renders this same Application from
+# roles/role-kube_init/templates/argocd/bootstrap.yml.j2 and applies it, which
+# also lets you layer an environment overlay via the `argocd_env` variable.
+# Use this file only when bootstrapping a cluster by hand.
+#
+# To pin an environment here, add the overlay under valueFiles, e.g.
+#   - values.yaml
+#   - values-dev.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,16 +21,17 @@ spec:
     server: https://kubernetes.default.svc
   project: default
   source:
-    helm:
-      valueFiles:
-        - values.yaml
     path: base-apps
     repoURL: https://github.com/josuecodjo/argocd-apps.git
     targetRevision: HEAD
+    helm:
+      valueFiles:
+        - values.yaml
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
-      - ApplyOutOfSyncOnly=true  
-    automated: # automated sync by default retries failed attempts 5 times with following delays between attempts ( 5s, 10s, 20s, 40s, 80s ); retry controlled using `retry` field.
-      prune: true # Specifies if resources should be pruned during auto-syncing ( false by default ).
-      selfHeal: true # Specifies if partial app sync should be executed when resources are changed only in target Kubernetes cluster and no git change detected ( false by default ).
+      - ApplyOutOfSyncOnly=true
+    automated:
+      # Retries failed attempts 5 times with delays 5s, 10s, 20s, 40s, 80s.
+      prune: true      # Remove resources that disappear from git.
+      selfHeal: true   # Revert drift applied directly to the cluster.
