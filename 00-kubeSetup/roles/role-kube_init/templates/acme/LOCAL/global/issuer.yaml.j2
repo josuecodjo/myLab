@@ -1,0 +1,71 @@
+---
+# =============================================================================
+# Local CA chain for *.{{ global_dns_name }}
+# =============================================================================
+# Three resources, in dependency order:
+#
+#   selfsigned-bootstrap (ClusterIssuer)  signs only the CA certificate below
+#            │
+#            ▼
+#   homelab-ca (Certificate, isCA)        the lab root CA, stored in the
+#            │                            homelab-ca-tls secret
+#            ▼
+#   local-cluster-issuer (ClusterIssuer)  signs every component's cert
+#
+# Trust homelab-ca once on your workstation and every certificate in the
+# cluster is valid - no more per-hostname browser warnings.
+#
+# The final issuer deliberately keeps the name `local-cluster-issuer`, so every
+# existing `cert-manager.io/cluster-issuer` annotation keeps working unchanged.
+#
+# The CA secret must live in cert-manager's cluster-resource-namespace, which
+# defaults to the namespace cert-manager runs in (cert-manager).
+# =============================================================================
+
+# 1. Bootstrap issuer. Its only job is to sign the CA certificate.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+
+---
+# 2. The lab root CA. This is the certificate you add to your trust store.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "{{ global_dns_name }} local CA"
+  subject:
+    organizations:
+      - "{{ global_dns_name }}"
+  secretName: homelab-ca-tls
+  duration: 87600h    # 10 years - you only want to trust this once
+  renewBefore: 8760h  # rotate a year before expiry
+  privateKey:
+    algorithm: RSA    # RSA 4096 for the widest client compatibility
+    size: 4096
+    encoding: PKCS1
+  usages:
+    - cert sign
+    - crl sign
+    - digital signature
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# 3. The issuer every Ingress annotation points at. Leaf certificates it signs
+#    carry the CA in ca.crt, so apps get a full chain.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: local-cluster-issuer
+spec:
+  ca:
+    secretName: homelab-ca-tls

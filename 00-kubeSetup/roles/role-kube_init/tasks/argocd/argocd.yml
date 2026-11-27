@@ -58,13 +58,15 @@
     path: "{{ v_global_install_path }}/argocd"
     state: directory
 
-- name: Bootstrap cluster with base apps
+- name: Copy the tools AppProject
   copy:
-    src: "argocd/{{ item }}"
-    dest: "{{ v_global_install_path }}/argocd/{{ item }}"
-  loop:
-    - tools-project.yml
-    - bootstrap.yml
+    src: "argocd/tools-project.yml"
+    dest: "{{ v_global_install_path }}/argocd/tools-project.yml"
 
-- name: Appliquer la configuration ACME sur K3S
+- name: Render the root app-of-apps (layers the argocd_env overlay when set)
+  template:
+    src: "argocd/bootstrap.yml.j2"
+    dest: "{{ v_global_install_path }}/argocd/bootstrap.yml"
+
+- name: Apply the Argo CD bootstrap manifests
   command: kubectl apply -f {{ v_global_install_path }}/argocd

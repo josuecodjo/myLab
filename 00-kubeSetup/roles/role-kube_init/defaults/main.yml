@@ -2,8 +2,9 @@
 # Global configs
 global_dns_name: home.lab
 
-# Acme mode
-acme_mode: Local # AWS, Azure
+# Acme mode - must match a directory name under templates/acme/ (LOCAL, AWS, Azure).
+# Case matters on a Linux control node.
+acme_mode: LOCAL
 
 # Azure_config
 subscriptionid: ""
@@ -24,3 +25,12 @@ awx_projects_storage: 2Gi
 
 # ArgoCD
 argocd_hostname: argocd
+
+# Root app-of-apps source.
+argocd_apps_repo_url: https://github.com/josuecodjo/argocd-apps.git
+argocd_apps_revision: HEAD
+
+# Environment overlay layered on base-apps/values.yaml.
+# "" -> catalog defaults only. Set to dev, qa or prod to also load
+# base-apps/values-<env>.yaml from the argocd-apps repo.
+argocd_env: ""

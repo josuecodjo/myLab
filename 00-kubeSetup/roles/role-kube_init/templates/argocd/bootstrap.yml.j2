@@ -1,0 +1,40 @@
+# Managed by role-kube_init. Rendered from templates/argocd/bootstrap.yml.j2
+# Root "app of apps": the only Application applied imperatively. Everything
+# else in the cluster is created by the base-apps chart it points at.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: base-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    path: base-apps
+    repoURL: {{ argocd_apps_repo_url }}
+    targetRevision: {{ argocd_apps_revision }}
+    helm:
+      valueFiles:
+        - values.yaml
+{% if argocd_env | default('') | length > 0 %}
+        - values-{{ argocd_env }}.yaml
+{% endif %}
+      # One DNS suffix for the whole cluster: the same variable that builds the
+      # Argo CD ingress host is handed to the base-apps chart, which expands it
+      # into every component's ingress host and TLS SAN.
+      parameters:
+        - name: global.dnsName
+          value: "{{ global_dns_name }}"
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    automated:
+      # Retries failed attempts 5 times with delays 5s, 10s, 20s, 40s, 80s.
+      prune: true      # Remove resources that disappear from git.
+      selfHeal: true   # Revert drift applied directly to the cluster.
