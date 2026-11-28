@@ -747,32 +747,93 @@ EOF
 
   vault write auth/kubernetes/role/vso-demo \
       bound_service_account_names=vault-demo \
-      bound_service_account_namespaces=vault-secrets-operator \
+      bound_service_account_namespaces=vault-demo \
       policies=vso-demo ttl=1h
 
-  vault kv put secret/demo message=hello
+  # The KV engine does NOT exist yet - see the note below. Create it, then seed it.
+  vault secrets enable -path=secret kv-v2
+  vault kv put secret/demo username=demo-user password=s3cr3t-v1
 ```
+
+> **There is no `secret/` mount on a fresh Vault.** The familiar `secret/` KV v2
+> path exists only under `vault server -dev`. On an initialised server you get
+> *no* secrets engines at all — the Helm chart's `standalone.config` contains
+> only `ui`, `listener` and `storage`, and a Vault HCL config cannot enable an
+> engine anyway, since that is a runtime API operation. Skip
+> `vault secrets enable` and `vault kv put` fails with a confusing
+> `403` on `sys/internal/ui/mounts/secret/demo` — confusing because Vault returns
+> `permission denied` rather than `not found` for paths that do not exist, so it
+> reads like a token problem when it is a missing mount. Confirm with
+> `vault secrets list`.
+
+> Both role bindings must say `vault-demo` — the ServiceAccount *name* and its
+> *namespace*. A mismatch is the other common failure here, and it also surfaces
+> only as `permission denied` from VSO.
+
+> The `audience` warning from `vault write auth/kubernetes/role/...` is expected
+> and harmless: audience verification is optional, and the demo does not set one.
+> Add `audience=vault` to the role and `audiences: [vault]` to the `VaultAuth` if
+> you want that extra JWT claim check.
 
 AppRole would have needed a role-id/secret-id pair planted in the cluster first —
 a secret in order to fetch secrets. Kubernetes auth avoids that: Vault validates
 VSO's ServiceAccount token via `TokenReview`, which is why the chart's
 `server.authDelegator` must stay enabled.
 
-**11e. Prove the chain**, by enabling `apps.vault-config` and syncing it by hand
-(it has `autosync_enabled: false`, since it can only succeed after the steps
-above):
+**11e. Prove the chain with the demo app.** Set `apps.vault-demo.enabled: true`
+in `argocd-apps/base-apps/values.yaml`, push, then sync it by hand — it ships
+`autosync_enabled: false` because it cannot succeed until 11d is done:
 
 ```bash
-argocd app sync vault-config          # or Sync in the UI
-kubectl get secret vault-demo -n vault-secrets-operator \
-  -o jsonpath='{.data.message}' | base64 -d        # -> hello
+argocd app sync vault-demo        # or Sync in the Argo CD UI
+
+# VSO authenticated and rendered the Secret
+kubectl get vaultstaticsecret -n vault-demo
+kubectl get secret vault-demo-creds -n vault-demo \
+  -o jsonpath='{.data.password}' | base64 -d          # -> s3cr3t-v1
+
+# the pod sees it both ways
+kubectl exec -n vault-demo deploy/vault-demo -- cat /vault/secrets/password
+kubectl exec -n vault-demo deploy/vault-demo -- printenv PASSWORD
 ```
 
-That confirms `VaultAuth` → Kubernetes auth → KV v2 → Kubernetes Secret. Delete
-the demo `VaultStaticSecret` afterwards; it is scaffolding, not a fixture.
+If the Secret never appears, the role binding in 11d is almost always why:
+`kubectl describe vaultstaticsecret -n vault-demo` prints Vault's error verbatim.
+The pod stays in `ContainerCreating` until the Secret exists, which makes the
+failure obvious rather than silent.
+
+**11f. See it, and watch it rotate.** The app renders the value twice — once
+re-read from the mounted file on every request, once captured from an environment
+variable at pod start:
+
+```bash
+kubectl port-forward -n vault-demo svc/vault-demo 8080:80
+# -> http://localhost:8080
+```
+
+Now rotate it in Vault and refresh the page:
+
+```bash
+kubectl exec -ti -n vault vault-0 -- sh -c \
+  'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<root> \
+   vault kv put secret/demo username=demo-user password=s3cr3t-v2'
+```
+
+Within about a minute the **mounted-file** panel shows `s3cr3t-v2` while the
+**env-var** panel still shows `s3cr3t-v1`. That is not a bug: Kubernetes keeps a
+mounted Secret in sync (this kubelet uses `Watch` detection with
+`syncFrequency: 1m0s`) but cannot change a running process's environment. It is
+precisely why VSO offers `rolloutRestartTargets` — for consumers that can only
+read env vars, the fix is to restart them.
+
+The app also logs each read, so the current value is visible in the **Argo CD UI's
+log pane** without port-forwarding and without enabling the terminal.
+
+> The page prints a secret over unauthenticated HTTP — deliberately, because the
+> whole point is to see the delivered value. Keep `secret/demo` disposable.
 
 **After every reboot:** Vault re-seals, so repeat 11c. Until you do, the `vault`
-app is Progressing and the root `base-apps` app shows not-Healthy — everything
+app is Progressing and the root `base-apps-prod` app shows not-Healthy — everything
 else stays synced and unaffected. If that becomes tiresome, the alternative is
 storing unseal keys in a Secret with a Job that unseals on start, which trades
 away much of Vault's threat model.
