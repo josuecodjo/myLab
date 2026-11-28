@@ -56,9 +56,20 @@ spec:
         targetRevision: {{ argocd_apps_revision }}
         path: base-apps
         helm:
-          # A newly registered cluster with no values file yet still renders
-          # instead of failing the whole ApplicationSet.
-          ignoreMissingValueFiles: true
+          # NO ignoreMissingValueFiles here, deliberately - it was removed.
+          #
+          # Tolerating a missing values-<cluster>.yaml sounds resilient and is the
+          # opposite: the render falls back to the catalog defaults, where
+          # appNameSuffix is "", so EVERY child Application comes out named
+          # exactly as the hub's are and two root apps end up fighting over the
+          # same objects. That is the precise failure the suffix scheme exists to
+          # prevent, reintroduced by a forgotten file.
+          #
+          # Without the flag, a missing file fails this ONE generated Application
+          # with a visible ComparisonError. Each generated Application renders
+          # independently, so no other cluster is affected. The chart also
+          # cross-checks the file actually belongs to this cluster - see the guard
+          # at the top of base-apps/templates/charts.yaml.
           valueFiles:
             - values.yaml
             - 'values-{% raw %}{{ .name }}{% endraw %}.yaml'
@@ -67,6 +78,14 @@ spec:
             # Taken straight from the registration Secret.
             - name: spec.destination.server
               value: '{% raw %}{{ .server }}{% endraw %}'
+            # Tells the chart which cluster it is rendering for, so its guard can
+            # refuse to render when values-<cluster>.yaml is missing or belongs to
+            # a different cluster. Note parameters are applied as `--set` and so
+            # beat valueFiles - which is also why appNameSuffix CANNOT be passed
+            # this way: the hub could not override it back to "" and all of its
+            # running Applications would be renamed.
+            - name: renderedForCluster
+              value: '{% raw %}{{ .name }}{% endraw %}'
       syncPolicy:
         syncOptions:
           - CreateNamespace=true

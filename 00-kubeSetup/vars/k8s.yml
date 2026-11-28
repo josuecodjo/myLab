@@ -28,4 +28,4 @@ argocd_hostname: argocd
 # SUPERSEDED: per-cluster values files are now chosen by the base-apps
 # ApplicationSet from each cluster's registration name (values-<cluster>.yaml).
 # Only the superseded bootstrap.yml.j2 still reads this.
-argocd_env: ""
+argocd_env: "prod"

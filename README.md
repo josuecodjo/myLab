@@ -950,6 +950,20 @@ ansible-playbook -i hosts_global playbook.yml --tags argocd \
 A `base-apps-dev` root app should appear with no extra manifest. Its children all
 carry a `-dev` suffix and target the dev cluster.
 
+> **Commit `values-dev.yaml` before registering, not after.** Registration and
+> the values file are one change. If the file is missing, the chart refuses to
+> render for that cluster and says so:
+>
+> ```
+> base-apps: refusing to render for cluster "dev" because clusterName is "prod".
+> Create base-apps/values-dev.yaml with `clusterName: dev` and `appNameSuffix: "-dev"` ...
+> ```
+>
+> That guard is there because the alternative is worse than a failed render:
+> without the file every child Application would be named exactly as the hub's
+> are, and two root apps would fight over the same objects — the same mess as
+> the cutover in 13a. Only `base-apps-dev` fails; the hub is unaffected.
+
 ### 13d. Let the hub's Grafana see dev
 
 Grafana runs in a **pod**, so it resolves hostnames through CoreDNS — the node's
