@@ -1,5 +1,22 @@
 # Manual fallback for the root "app of apps".
 #
+# ⚠️  THIS FILE IS LOSSY IF IT DRIFTS FROM THE ANSIBLE TEMPLATE.
+#
+# It lives in `manual/` on purpose: `kubectl apply -f 04-ArgoCD` is NOT
+# recursive, so applying that directory can no longer clobber the root app.
+# It previously sat alongside the ApplicationSets, and applying the directory
+# silently dropped the `global.dnsName` Helm parameter below - which reset
+# every component's ingress host to the catalog default (home.lab) and
+# reissued every certificate for the wrong name.
+#
+# The authoritative source is
+#   roles/role-kube_init/templates/argocd/bootstrap.yml.j2
+# which renders `global.dnsName` from `global_dns_name`. Prefer:
+#   ansible-playbook -i hosts_global playbook.yml --tags argocd
+#
+# If you apply this by hand, set `global.dnsName` below to match
+# `global_dns_name` in vars/k8s.yml first.
+#
 # The normal path is Ansible: role-kube_init renders this same Application from
 # roles/role-kube_init/templates/argocd/bootstrap.yml.j2 and applies it, which
 # also lets you layer an environment overlay via the `argocd_env` variable.
@@ -27,6 +44,11 @@ spec:
     helm:
       valueFiles:
         - values.yaml
+      # MUST match `global_dns_name` in vars/k8s.yml. Every ingress host and
+      # TLS SAN in the cluster derives from this one value.
+      parameters:
+        - name: global.dnsName
+          value: "home.lab"
   ignoreDifferences:
     # Argo CD manages finalizers on the child Applications itself. Any chart
     # shipping a `helm.sh/hook: pre-delete` resource - the Vault Secrets

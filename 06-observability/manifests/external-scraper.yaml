@@ -1,0 +1,99 @@
+---
+# Read-only identity for an observability stack running OUTSIDE this cluster.
+#
+# Needed only for Step 3 of 06-observability/README.md. Steps 1 and 2 (host
+# metrics and host logs) need none of this - node-exporter is already reachable
+# on <node>:9100 and journald is on the host.
+#
+# Apply:   kubectl apply -f manifests/external-scraper.yaml
+# Remove:  kubectl delete -f manifests/external-scraper.yaml
+#
+# The rules below are deliberately a superset of what the in-cluster Prometheus
+# grants itself (ClusterRole kube-prometheus-stack-prometheus), plus the two
+# `proxy` subresources an OUTSIDE scraper additionally needs, because it cannot
+# reach ClusterIP services directly and has to go through the API server.
+#
+# Everything here is get/list/watch. No write verbs, no secrets access.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-scraper
+  namespace: monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-scraper
+rules:
+  # Service discovery: lets her Prometheus use kubernetes_sd_configs instead of
+  # hardcoding targets. Same set the in-cluster Prometheus uses.
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/metrics   # required to scrape the kubelet directly on :10250
+      - nodes/stats
+      - services
+      - endpoints
+      - pods
+      - namespaces
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+
+  # Proxy subresources. This is the part the in-cluster Prometheus does NOT need
+  # and an external one does: ClusterIP services (kube-state-metrics, the
+  # in-cluster Prometheus itself) are unreachable from outside, so requests go
+  # through the API server, e.g.
+  #   /api/v1/namespaces/monitoring/services/<svc>:<port>/proxy/metrics
+  - apiGroups: [""]
+    resources:
+      - nodes/proxy
+      - services/proxy
+      - pods/proxy
+    verbs: ["get"]
+
+  # The kubelet's own metrics paths.
+  - nonResourceURLs:
+      - /metrics
+      - /metrics/cadvisor
+      - /metrics/resource
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: external-scraper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: external-scraper
+subjects:
+  - kind: ServiceAccount
+    name: external-scraper
+    namespace: monitoring
+
+---
+# A long-lived token, because an external Prometheus needs a credential that
+# survives its own restarts and the lab's reboots.
+#
+# Since Kubernetes 1.24 tokens are no longer auto-created for ServiceAccounts;
+# this annotated Secret opts back in and the token controller populates
+# `.data.token`. The modern short-lived alternative is
+#   kubectl create token external-scraper -n monitoring --duration=24h
+# which is better hygiene but has to be refreshed - fine for a demo, awkward for
+# a stack that is supposed to keep running. Use the short-lived form if this
+# cluster ever stops being a lab.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: external-scraper
+  namespace: monitoring
+  annotations:
+    kubernetes.io/service-account.name: external-scraper
+type: kubernetes.io/service-account-token

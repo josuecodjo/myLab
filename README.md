@@ -26,9 +26,10 @@ Argo CD creates the rest.
 12. [Step 9 — Kargo promotion pipeline](#step-9--kargo-promotion-pipeline)
 13. [Step 10 — Validate the security stack](#step-10--validate-the-security-stack)
 14. [Step 11 — Vault](#step-11--vault-optional-needs-manual-initialisation)
-15. [Teardown](#teardown)
-16. [Troubleshooting](#troubleshooting)
-17. [Known gaps](#known-gaps)
+15. [Step 12 — Observability from outside](#step-12--observability-from-outside-the-cluster)
+16. [Teardown](#teardown)
+17. [Troubleshooting](#troubleshooting)
+18. [Known gaps](#known-gaps)
 
 ---
 
@@ -551,6 +552,16 @@ This applies the platform Application and the three ApplicationSets listed in
 app Ansible already applied — harmless to re-apply, and useful if you ever
 bootstrap a cluster by hand.
 
+> **`00-bootstrap.yml` is no longer in this directory** — it moved to
+> `04-ArgoCD/manual/`, and `kubectl apply -f` is not recursive, so applying
+> `04-ArgoCD` can no longer touch the root app. It previously sat here, and
+> applying the directory silently dropped the root app's `global.dnsName` Helm
+> parameter: every ingress host reverted to the catalog default (`home.lab`)
+> and cert-manager reissued every certificate for the wrong name. The root app
+> belongs to Ansible — `--tags argocd` — which renders the parameter from
+> `global_dns_name`. Use `manual/00-bootstrap.yml` only for a hand bootstrap,
+> and set `global.dnsName` in it first.
+
 > There is no `06-gitops.yml` any more. The apps it used to pull from
 > `declarative/root/` are now entries in the catalog's `apps:` section, owned by
 > the one root app. If you bootstrapped a cluster before that change, clean up
@@ -762,6 +773,33 @@ away much of Vault's threat model.
 
 ---
 
+## Step 12 — Observability from outside the cluster
+
+A self-contained starter kit for someone learning to collect metrics and logs
+from this lab using their **own** stack, running outside the cluster: see
+[06-observability/README.md](06-observability/README.md).
+
+It is built to be handed to someone else, so it states what is already reachable
+rather than prescribing tools:
+
+| | |
+|---|---|
+| Host metrics | already open — `http://<node>:9100/metrics`, no cluster change needed |
+| Host logs | journald on the node (3.9 GB of history) and `/var/log` |
+| Cluster metrics | kubelet `:10250` and the API `:6443` need a token — `06-observability/manifests/external-scraper.yaml` provides a read-only one |
+| Load generator | `06-observability/scripts/load-test.sh --mode node\|hpa\|both` |
+
+The load script saturates the host (verified: 16 cores to 99%) or drives the
+`php-apache` HPA (verified: 1→10 replicas), with a hard duration cap, an opt-in
+and capped memory option, and three independent stop mechanisms. Start with
+`--dry-run`.
+
+This is the rung below the practice's Phase 1 target architecture: understand the
+collection targets from outside before building the in-cluster OpenTelemetry
+pipeline.
+
+---
+
 ## Teardown
 
 ```bash
@@ -813,6 +851,22 @@ entry in `values.yaml`. Already set for `kyverno` and `kube-prometheus-stack`.
 **A component won't go away after `enabled: false`.** The root app prunes, but
 check the child Application's finalizer actually ran:
 `kubectl get application <name> -n argocd -o yaml`.
+
+**Every hostname suddenly reverted to `home.lab`.** Something overwrote the root
+`base-apps` Application without its `global.dnsName` Helm parameter — most likely
+applying a stale bootstrap manifest by hand. Check it:
+
+```bash
+kubectl get app base-apps -n argocd -o jsonpath='{.spec.source.helm}'
+# must contain: {"name":"global.dnsName","value":"<your domain>"}
+```
+
+Fix by re-running `ansible-playbook -i hosts_global playbook.yml --tags argocd`.
+Children re-render within two reconciles and cert-manager reissues each
+certificate for the corrected SAN automatically. Note `argocd.<domain>` itself
+is unaffected, because that ingress comes from the Argo CD Helm release rather
+than from base-apps — so Argo CD staying reachable on the right host is *not*
+evidence the rest is fine.
 
 **Ingress hostname doesn't resolve.** Add `<target-ip> <host>.home.lab` to
 `/etc/hosts` for each component you enabled (step 3c), or port-forward (step 5).
