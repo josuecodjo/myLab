@@ -1,3 +1,7 @@
 ---
 - name: argocd.yml
   ansible.builtin.include_tasks: argocd.yml
+
+- name: register-spoke.yml
+  ansible.builtin.include_tasks: register-spoke.yml
+  when: spoke_cluster_enabled | bool

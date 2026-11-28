@@ -33,4 +33,16 @@ argocd_apps_revision: HEAD
 # Environment overlay layered on base-apps/values.yaml.
 # "" -> catalog defaults only. Set to dev, qa or prod to also load
 # base-apps/values-<env>.yaml from the argocd-apps repo.
+# SUPERSEDED - see vars/k8s.yml. Read only by the superseded bootstrap.yml.j2.
 argocd_env: ""
+
+# --- spoke (additional) clusters ----------------------------------------------
+# Off by default: a single-cluster lab needs none of this, and the base-apps
+# ApplicationSet renders exactly one root app when only the hub is registered.
+#
+# To add one: apply 04-ArgoCD/manual/argocd-manager.yaml on the spoke, then set
+# these and re-run with --tags argocd.
+spoke_cluster_enabled: false
+spoke_name: dev                 # also picks base-apps/values-<name>.yaml
+spoke_cluster_api: ""           # e.g. https://10.0.0.11:6443
+spoke_kube_context: dev         # a context in your kubeconfig for the spoke

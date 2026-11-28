@@ -1,3 +1,12 @@
+# SUPERSEDED by base-apps-appset.yml.j2 - no task renders this any more.
+#
+# It produced a SINGLE root Application for one cluster. That is now the job of
+# the base-apps ApplicationSet, which generates one root app per registered
+# cluster and so covers the single-cluster case too (one cluster -> one root app).
+#
+# Kept for reference and as a break-glass single-root path. If you resurrect it,
+# delete the ApplicationSet first: both manage the same child Applications.
+#
 # Managed by role-kube_init. Rendered from templates/argocd/bootstrap.yml.j2
 # Root "app of apps": the only Application applied imperatively. Everything
 # else in the cluster is created by the base-apps chart it points at.

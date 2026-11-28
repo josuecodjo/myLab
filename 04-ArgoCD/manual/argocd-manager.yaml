@@ -1,0 +1,48 @@
+---
+# Apply this ON THE SPOKE cluster (the dev machine), not on the hub.
+#
+# It creates the identity the hub's Argo CD uses to manage this cluster, which is
+# the same thing `argocd cluster add` would create for you - done declaratively so
+# it is reproducible and does not need the argocd CLI (the local CLI is v2.10.9
+# against a v3.6.1 server, so avoiding it is also avoiding a version skew).
+#
+# Then read the token and register it on the HUB:
+#   kubectl --context <spoke> -n kube-system get secret argocd-manager \
+#     -o jsonpath='{.data.token}' | base64 -d
+#
+# cluster-admin is intentional: Argo CD has to create arbitrary resources,
+# including CRDs the catalog installs. `argocd cluster add` grants the same.
+# Narrowing it means enumerating every CRD in the catalog and re-doing that work
+# every time a component is added - worth revisiting if this ever leaves a lab.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-manager
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: argocd-manager
+    namespace: kube-system
+
+---
+# Long-lived token: the hub needs a credential that survives restarts on both
+# ends. Since Kubernetes 1.24 tokens are not auto-created, so this annotated
+# Secret opts back in. (Verified populating on k3s v1.37.)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-manager
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: argocd-manager
+type: kubernetes.io/service-account-token

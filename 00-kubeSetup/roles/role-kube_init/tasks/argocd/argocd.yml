@@ -86,10 +86,38 @@
     src: "argocd/tools-project.yml"
     dest: "{{ v_global_install_path }}/argocd/tools-project.yml"
 
-- name: Render the root app-of-apps (layers the argocd_env overlay when set)
+- name: Register this cluster (the hub) so the ApplicationSet can select it
+  copy:
+    src: "argocd/cluster-hub.yaml"
+    dest: "{{ v_global_install_path }}/argocd/cluster-hub.yaml"
+
+- name: Render the base-apps ApplicationSet
+  # One ApplicationSet per hub, not one Application per cluster: a cluster gets
+  # the catalog because its registration Secret carries the managed label. With
+  # only the hub registered this yields exactly one root app, so the
+  # single-cluster path is unchanged.
   template:
-    src: "argocd/bootstrap.yml.j2"
-    dest: "{{ v_global_install_path }}/argocd/bootstrap.yml"
+    src: "argocd/base-apps-appset.yml.j2"
+    dest: "{{ v_global_install_path }}/argocd/base-apps-appset.yml"
 
 - name: Apply the Argo CD bootstrap manifests
   command: kubectl apply -f {{ v_global_install_path }}/argocd
+
+- name: Wait for the hub's root Application to be generated
+  command: kubectl get application base-apps-prod -n argocd
+  register: _hub_root
+  until: _hub_root.rc == 0
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Fail loudly if the implicit in-cluster entry also matched
+  # The label selector is expected to exclude Argo CD's implicit "in-cluster"
+  # entry, since it has no Secret and therefore no labels. If that assumption is
+  # wrong we get a second root app whose children collide with the hub's, so
+  # check rather than hope. Fix: set cluster.inClusterEnabled="false" in
+  # argocd-cmd-params-cm, which is safe because the hub is registered explicitly.
+  command: kubectl get application base-apps-in-cluster -n argocd --ignore-not-found
+  register: _stray_root
+  changed_when: false
+  failed_when: _stray_root.stdout | length > 0

@@ -25,4 +25,7 @@ argocd_hostname: argocd
 
 # Which base-apps overlay the root app-of-apps should layer on values.yaml.
 # "" = catalog defaults only. Options: dev, qa, prod.
+# SUPERSEDED: per-cluster values files are now chosen by the base-apps
+# ApplicationSet from each cluster's registration name (values-<cluster>.yaml).
+# Only the superseded bootstrap.yml.j2 still reads this.
 argocd_env: ""

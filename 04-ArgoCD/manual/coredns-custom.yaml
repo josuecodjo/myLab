@@ -1,0 +1,26 @@
+---
+# Lets the HUB's pods resolve the spoke clusters' ingress hostnames.
+#
+# Needed because Grafana runs in a POD: the node's /etc/hosts is irrelevant to
+# it, so `prometheus.dev.lab` would not resolve and the dev datasource would
+# fail with a DNS error rather than anything obvious.
+#
+# This uses k3s's documented custom-import hook - the shipped Corefile contains
+#   import /etc/coredns/custom/*.override
+# so a ConfigMap named `coredns-custom` with a `*.override` key is merged in and
+# SURVIVES k3s restarts. Editing the managed `coredns` ConfigMap directly does
+# not: k3s overwrites it.
+#
+# Replace <dev-ip> before applying, then restart CoreDNS to pick it up:
+#   kubectl rollout restart deploy/coredns -n kube-system
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  devlab.override: |
+    hosts {
+      <dev-ip> prometheus.dev.lab
+      fallthrough
+    }

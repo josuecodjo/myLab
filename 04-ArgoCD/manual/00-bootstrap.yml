@@ -1,3 +1,17 @@
+# SUPERSEDED - DO NOT APPLY unless you know the base-apps ApplicationSet is gone.
+#
+# The platform is now driven by ONE ApplicationSet (rendered from
+# roles/role-kube_init/templates/argocd/base-apps-appset.yml.j2), which generates
+# a root app per registered cluster - `base-apps-prod` for the hub.
+#
+# This file creates a root app called `base-apps`. The NAME differs from the
+# generated one, but the CHILDREN it renders are the same nine Applications, so
+# applying it alongside the ApplicationSet puts two parents in a fight over every
+# component. Check before you ever use it:
+#     kubectl get appset base-apps -n argocd        # must NOT exist
+#
+# Kept only as a break-glass path for a cluster with no ApplicationSet controller.
+#
 # Manual fallback for the root "app of apps".
 #
 # ⚠️  THIS FILE IS LOSSY IF IT DRIFTS FROM THE ANSIBLE TEMPLATE.

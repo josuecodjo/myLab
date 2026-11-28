@@ -5,8 +5,8 @@ full GitOps platform: Argo CD manages every component, Kyverno and Falco enforce
 and watch security, kro provides application abstractions, and Kargo promotes
 releases across stages.
 
-Everything after the Ansible run is declarative. You apply **one** Application;
-Argo CD creates the rest.
+Everything after the Ansible run is declarative. You apply **one** ApplicationSet;
+Argo CD creates the rest — on this cluster, and on any other you register.
 
 ---
 
@@ -27,9 +27,10 @@ Argo CD creates the rest.
 13. [Step 10 — Validate the security stack](#step-10--validate-the-security-stack)
 14. [Step 11 — Vault](#step-11--vault-optional-needs-manual-initialisation)
 15. [Step 12 — Observability from outside](#step-12--observability-from-outside-the-cluster)
-16. [Teardown](#teardown)
-17. [Troubleshooting](#troubleshooting)
-18. [Known gaps](#known-gaps)
+16. [Step 13 — Add a dev cluster](#step-13--add-a-dev-cluster-supervised-by-this-one)
+17. [Teardown](#teardown)
+18. [Troubleshooting](#troubleshooting)
+19. [Known gaps](#known-gaps)
 
 ---
 
@@ -44,11 +45,15 @@ Argo CD creates the rest.
    (+ Traefik by          (+ ClusterIssuer          (Helm, ingress
     default)              local-cluster-issuer)      on argocd.home.lab)
                                                           │
-                                       applies 2 manifests│
+                                       applies 3 manifests│
                                                           ▼
-                                            AppProject "tools"
-                                            Application "base-apps"  ◄── the only
-                                                          │               imperative step
+                                   AppProject "tools"
+                                   Secret   cluster-hub  (registers this cluster)
+                                   AppSet   base-apps    ◄── the only
+                                                          │    imperative step
+                        generates one root app per registered cluster
+                          base-apps-prod  (here)   [+ base-apps-dev, step 13]
+                                                          │
                                  renders base-apps Helm chart
                                  (argocd-apps repo)
                                                           │
@@ -182,7 +187,8 @@ playbook's `pre_tasks` and override the role defaults:
 global_dns_name: home.lab       # ingress suffix -> argocd.home.lab
 acme_mode: LOCAL                # LOCAL | AWS | Azure (case-sensitive!)
 argocd_hostname: argocd
-argocd_env: ""                  # "" | dev | qa | prod  (see step 6)
+# argocd_env is superseded: the base-apps ApplicationSet picks
+# values-<cluster>.yaml from each cluster's registration name (steps 6 and 13).
 ```
 
 > `acme_mode` must exactly match a directory name under
@@ -800,6 +806,117 @@ pipeline.
 
 ---
 
+## Step 13 — Add a dev cluster, supervised by this one
+
+A second k3s cluster on another machine, with **no Argo CD and no Grafana of its
+own**: this cluster becomes the hub for both. See
+[argocd-apps README §9](https://github.com/josuecodjo/argocd-apps#9-multi-cluster-hub-and-spoke)
+for how the catalog targets several clusters.
+
+### 13a. The cutover on the hub — read this first
+
+The platform used to be driven by one root Application called `base-apps`. It is
+now driven by an **ApplicationSet** that generates one root app per registered
+cluster, so the hub's becomes `base-apps-prod`. The children keep identical names,
+so the new parent adopts them — **but only if the old parent is removed without
+pruning**.
+
+> `kubectl delete app base-apps` cascades through `resources-finalizer` and
+> **deletes the entire platform** — Vault, Kargo, everything. The finalizer must
+> come off first.
+
+```bash
+# 1. prove the only change is the new cluster label (nothing else moves)
+cd ../argocd-apps
+helm template b base-apps -f base-apps/values.yaml --set global.dnsName=prod.lab > /tmp/before.yaml
+helm template b base-apps -f base-apps/values.yaml -f base-apps/values-prod.yaml > /tmp/after.yaml
+diff /tmp/before.yaml /tmp/after.yaml      # expect ONLY externalLabels: cluster: prod
+
+# 2. strip the finalizer so deletion cannot prune the children
+kubectl patch app base-apps -n argocd --type=merge -p '{"metadata":{"finalizers":null}}'
+
+# 3. delete the old root; the nine children keep running, briefly unmanaged
+kubectl delete app base-apps -n argocd
+kubectl get app -n argocd                  # the nine must still be listed
+
+# 4. hand over to the ApplicationSet
+ansible-playbook -i hosts_global playbook.yml --tags argocd
+
+# 5. adoption, not recreation: the children's ages must PREDATE the cutover
+kubectl get app -n argocd -o custom-columns=\
+NAME:.metadata.name,AGE:.metadata.creationTimestamp,SYNC:.status.sync.status
+```
+
+The playbook also asserts that Argo CD's implicit `in-cluster` entry did **not**
+also match the generator's label selector — a `base-apps-in-cluster` would render
+children colliding with the hub's. If that task fails, set
+`cluster.inClusterEnabled: "false"` in `argocd-cmd-params-cm`; it is safe because
+the hub is now registered explicitly via `04-ArgoCD/manual/cluster-hub.yaml`.
+
+### 13b. Provision the dev host
+
+Add the machine to `00-kubeSetup/hosts_global` and give it a
+`host_vars/<name>.yml` with its `ansible_host` and `ansible_user`, plus
+`global_dns_name: dev.lab` so its hostnames never collide with `*.prod.lab`.
+
+Then install **k3s and cert-manager only** — deliberately not `argocd`:
+
+```bash
+ansible-playbook -i hosts_global playbook.yml --limit dev --tags k3s-traefik,certmanager
+```
+
+cert-manager is still wanted there: it issues the certificate for the Prometheus
+ingress the hub reads.
+
+> Dev mints its **own** lab CA, so browsing dev UIs means trusting a second root
+> on your workstation. The hub's Grafana sidesteps this by querying dev over
+> plain http.
+
+### 13c. Register dev with the hub
+
+```bash
+# on DEV: create the identity the hub will use
+kubectl --context dev apply -f 04-ArgoCD/manual/argocd-manager.yaml
+
+# on the HUB: register it, which is all the ApplicationSet needs
+ansible-playbook -i hosts_global playbook.yml --tags argocd \
+  -e spoke_cluster_enabled=true \
+  -e spoke_name=dev \
+  -e spoke_cluster_api=https://<dev-ip>:6443 \
+  -e spoke_kube_context=dev
+```
+
+A `base-apps-dev` root app should appear with no extra manifest. Its children all
+carry a `-dev` suffix and target the dev cluster.
+
+### 13d. Let the hub's Grafana see dev
+
+Grafana runs in a **pod**, so it resolves hostnames through CoreDNS — the node's
+`/etc/hosts` is irrelevant to it. Edit `<dev-ip>` into
+`04-ArgoCD/manual/coredns-custom.yaml`, then:
+
+```bash
+kubectl apply -f 04-ArgoCD/manual/coredns-custom.yaml
+kubectl rollout restart deploy/coredns -n kube-system
+
+kubectl exec -n monitoring deploy/kube-prometheus-stack-grafana -c grafana -- \
+  wget -qO- 'http://prometheus.dev.lab/api/v1/query?query=up' | head -c 120
+```
+
+The `Prometheus-dev` datasource is already declared in the catalog, so it appears
+in Grafana once the name resolves. Prove both clusters are distinguishable:
+
+```bash
+kubectl exec -n monitoring prometheus-kube-prometheus-stack-prometheus-0 \
+  -c prometheus -- wget -qO- 'http://localhost:9090/api/v1/label/cluster/values'
+# ["prod"]  -- and the Prometheus-dev datasource answers ["dev"]
+```
+
+Finally, `06-observability/scripts/load-test.sh` run against dev should show the
+spike in the hub's Grafana through that datasource.
+
+---
+
 ## Teardown
 
 ```bash
@@ -913,4 +1030,14 @@ Honest list of what this setup does *not* do yet:
   chain (self-signed bootstrap → lab CA → issuer). AWS is still a bare
   `selfSigned` ClusterIssuer and Azure has no `global/` template at all. See
   Troubleshooting.
-- **Single node, no backups.** No etcd snapshots, no PV backup strategy.
+- **The hub is a single point of failure for deployments** once a second cluster
+  is registered (step 13). A spoke keeps serving if the hub dies; it just cannot
+  be changed.
+- **Each cluster mints its own lab CA**, so browsing a spoke's UIs means trusting
+  a second root on your workstation. Sharing one CA needs a spoke variant of the
+  issuer template that skips the `homelab-ca` Certificate and points the CA
+  ClusterIssuer at a copied secret.
+- **The spoke Grafana datasource is plain http and unauthenticated.** Acceptable
+  LAN-internal in a lab; not beyond one.
+- **Single node per cluster, no backups.** No etcd snapshots, no PV backup
+  strategy.

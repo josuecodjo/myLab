@@ -1,0 +1,97 @@
+# Managed by role-kube_init. Rendered from templates/argocd/base-apps-appset.yml.j2
+#
+# NOTE ON THE RAW BLOCKS BELOW: this file is rendered by Jinja2 (Ansible) but
+# contains Go templates that Argo CD's ApplicationSet controller must receive
+# verbatim. Jinja and Go template syntax are identical, so without a raw guard
+# Ansible tries to evaluate the Go expressions and the render fails outright
+# (TemplateSyntaxError: unexpected '.'). Anything inside a raw block is for Argo
+# CD; the two bare substitutions are Ansible's own variables.
+# Do not "tidy away" the raw guards - and keep Go expressions out of comments,
+# because comment text is parsed too.
+#
+# ONE ApplicationSet drives the base-apps catalog onto EVERY registered cluster.
+# A cluster gets the platform because its registration Secret exists and carries
+# the `lab.homelab/managed: "true"` label - no new manifest, no new template, and
+# no cluster API URL hardcoded anywhere in git.
+#
+# Single-cluster still works: with only the hub registered this produces exactly
+# one root Application, and appNameSuffix="" keeps the hub's Application names
+# unchanged.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: base-apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  generators:
+    # The label selector is load-bearing. With an EMPTY selector this generator
+    # also targets Argo CD's implicit local cluster (named "in-cluster"), which
+    # would produce a second root app whose children collide with the hub's.
+    # The implicit entry has no Secret, so it has no labels, so a labelled
+    # selector cannot match it. The hub is therefore registered explicitly -
+    # see 04-ArgoCD/manual/cluster-hub.yaml.
+    - clusters:
+        selector:
+          matchLabels:
+            lab.homelab/managed: "true"
+
+  template:
+    metadata:
+      # `prod`/`dev` are already valid Kubernetes names. Use .nameNormalized if a
+      # cluster name ever contains characters that need sanitising.
+      name: 'base-apps-{% raw %}{{ .name }}{% endraw %}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      destination:
+        # The ROOT app always lives on the hub; only its children travel.
+        server: https://kubernetes.default.svc
+        namespace: argocd
+      source:
+        repoURL: {{ argocd_apps_repo_url }}
+        targetRevision: {{ argocd_apps_revision }}
+        path: base-apps
+        helm:
+          # A newly registered cluster with no values file yet still renders
+          # instead of failing the whole ApplicationSet.
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - values.yaml
+            - 'values-{% raw %}{{ .name }}{% endraw %}.yaml'
+          parameters:
+            # The one thing that cannot live in git: where this cluster's API is.
+            # Taken straight from the registration Secret.
+            - name: spec.destination.server
+              value: '{% raw %}{{ .server }}{% endraw %}'
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+          - RespectIgnoreDifferences=true
+        automated:
+          prune: true
+          selfHeal: true
+      ignoreDifferences:
+        # Argo CD manages finalizers on the child Applications itself: any chart
+        # with a `helm.sh/hook: pre-delete` resource (the Vault Secrets Operator
+        # chart has one) gets pre-delete finalizers added, which git does not
+        # declare. Without this the root app sits permanently OutOfSync while
+        # selfHeal keeps stripping finalizers Argo CD just added.
+        - group: argoproj.io
+          kind: Application
+          jsonPointers:
+            - /metadata/finalizers
+
+  syncPolicy:
+    # Guardrails, deliberately non-destructive to start.
+    #   create-update               -> this ApplicationSet never DELETES a root app
+    #   preserveResourcesOnDeletion -> if a root app does go away, the cluster's
+    #                                  workloads are left running rather than pruned
+    # Removing a cluster's Secret would otherwise cascade into deleting everything
+    # that cluster runs. Tighten only with a reason.
+    applicationsSync: create-update
+    preserveResourcesOnDeletion: true

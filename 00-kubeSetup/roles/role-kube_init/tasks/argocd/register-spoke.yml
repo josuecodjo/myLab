@@ -1,0 +1,58 @@
+---
+# Register a SPOKE cluster with the hub's Argo CD.
+#
+# Runs on the HUB and reads the spoke's argocd-manager token over its kubeconfig.
+# Prerequisite, applied on the spoke beforehand:
+#   kubectl --context {{ spoke_kube_context }} apply -f 04-ArgoCD/manual/argocd-manager.yaml
+#
+# Once the Secret exists with the managed label, the base-apps ApplicationSet
+# picks the cluster up on its own and renders a root app for it - no extra
+# manifest and no template change.
+- name: Read the spoke's argocd-manager token
+  command: >
+    kubectl --context {{ spoke_kube_context }} -n kube-system
+    get secret argocd-manager -o jsonpath={.data.token}
+  register: _spoke_token
+  changed_when: false
+
+- name: Fail if the spoke token is empty
+  # An empty token almost always means argocd-manager.yaml was never applied on
+  # the spoke, or the token controller has not populated the Secret yet.
+  fail:
+    msg: >-
+      No token on the spoke. Apply 04-ArgoCD/manual/argocd-manager.yaml against
+      context '{{ spoke_kube_context }}' first, then re-run.
+  when: _spoke_token.stdout | length == 0
+
+- name: Register the spoke cluster with the hub
+  # `name` picks the values file: base-apps/values-{{ spoke_name }}.yaml.
+  # `insecure: true` skips verifying the spoke's API cert, which has its own
+  # per-cluster lab CA that the hub does not trust. Acceptable on a LAN; pin the
+  # spoke's CA here if this ever leaves one.
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "cluster-{{ spoke_name }}"
+        namespace: argocd
+        labels:
+          argocd.argoproj.io/secret-type: cluster
+          lab.homelab/managed: "true"
+      type: Opaque
+      stringData:
+        name: "{{ spoke_name }}"
+        server: "{{ spoke_cluster_api }}"
+        config: >-
+          {"bearerToken":"{{ _spoke_token.stdout | b64decode }}",
+           "tlsClientConfig":{"insecure":true}}
+  no_log: true          # the token must not land in Ansible output
+
+- name: Wait for the spoke's root Application to be generated
+  command: kubectl get application base-apps-{{ spoke_name }} -n argocd
+  register: _spoke_root
+  until: _spoke_root.rc == 0
+  retries: 12
+  delay: 5
+  changed_when: false

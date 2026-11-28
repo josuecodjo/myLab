@@ -1,0 +1,27 @@
+---
+# Explicit registration for the HUB (local) cluster.
+#
+# Argo CD already reaches the local cluster through an implicit entry named
+# "in-cluster", so this Secret adds no capability. It exists for one reason: the
+# base-apps ApplicationSet selects clusters by LABEL, and the implicit entry has
+# no Secret and therefore no labels. Without this, the hub would be skipped.
+#
+# It also gives the hub a NAME, which is what picks its values file:
+# `values-prod.yaml`. Rename this and you must rename that file too.
+#
+# Apply on the HUB:  kubectl apply -f 04-ArgoCD/manual/cluster-hub.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-hub
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+    lab.homelab/managed: "true"
+type: Opaque
+stringData:
+  name: prod
+  server: https://kubernetes.default.svc
+  # No credentials: in-cluster access uses the Argo CD service account.
+  config: |
+    {"tlsClientConfig":{"insecure":false}}
