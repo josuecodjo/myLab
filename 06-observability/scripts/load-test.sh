@@ -13,8 +13,12 @@
 #
 # SAFETY - this is a SINGLE-NODE cluster that also runs its own control plane.
 #   * CPU saturation is safe: things get slow, nothing dies.
-#   * MEMORY saturation is NOT. Exhausting RAM OOM-kills the control plane and
-#     takes the API server with it. --mem is therefore opt-in and hard-capped.
+#   * MEMORY is riskier: exhausting RAM OOM-kills the control plane and takes the
+#     API server with it. --mem is therefore opt-in, capped at a share of the
+#     node's own memory, and the stress container carries BOTH a memory request
+#     (so the scheduler refuses an impossible ask - you get a Pending pod, not a
+#     dead API server) and a memory limit (so the cgroup kills only that
+#     container on overshoot). Those two are what make a large --mem safe.
 #   * Load is stopped three independent ways, so a script that dies, a lost SSH
 #     session, or a Ctrl-C can never leave load running:
 #       1. `stress --timeout`                 (the process stops itself)
@@ -39,7 +43,12 @@ NS=loadtest
 ASSUME_YES=0
 DRY_RUN=0
 
-MEM_CAP_GB=4          # hard ceiling for --mem, regardless of what is asked
+# --mem ceiling, as a PERCENTAGE of the node's allocatable memory rather than a
+# fixed number: this script is handed around and runs against more than one
+# machine, so a hardcoded cap is either unsafe on a small box or uselessly small
+# on a big one. Resolved against the real node below.
+MEM_CAP_PCT=50
+MEM_CAP_GB=0          # computed from the node; 0 until then
 MAX_DURATION=1800     # hard ceiling for --duration
 
 # php-apache: the HPA target that already exists in this lab
@@ -62,7 +71,7 @@ Options:
   --duration SECONDS     how long to run, max $MAX_DURATION    (default: $DURATION)
   --cpu N                CPU workers, 0 = all cores       (default: autodetect)
   --io N                 I/O workers                      (default: $IO)
-  --mem GB               memory stress, 0 = off, max $MEM_CAP_GB   (default: off)
+  --mem GB               memory stress, 0 = off; capped at ${MEM_CAP_PCT}% of node RAM
   --workers N            concurrent HTTP loops in hpa mode (default: $WORKERS)
   --namespace NAME       namespace to create and delete   (default: $NS)
   --dry-run              print what would be created, change nothing
@@ -97,11 +106,6 @@ if (( DURATION > MAX_DURATION )); then
   warn "--duration $DURATION exceeds the $MAX_DURATION s ceiling; clamping"
   DURATION=$MAX_DURATION
 fi
-if (( MEM_GB > MEM_CAP_GB )); then
-  warn "--mem ${MEM_GB}G exceeds the ${MEM_CAP_GB}G safety cap; clamping (see SAFETY in this script)"
-  MEM_GB=$MEM_CAP_GB
-fi
-
 command -v kubectl >/dev/null || die "kubectl not found"
 kubectl cluster-info >/dev/null 2>&1 || die "cannot reach the cluster - check KUBECONFIG"
 
@@ -113,6 +117,36 @@ if (( CPU == 0 )); then
   (( CPU > 0 )) || CPU=2
 fi
 
+# Resolve the memory ceiling from the node itself.
+NODE_MEM_KI=$(kubectl get nodes -o jsonpath='{.items[0].status.allocatable.memory}' 2>/dev/null || echo "")
+case "$NODE_MEM_KI" in
+  *Ki) NODE_MEM_GB=$(( ${NODE_MEM_KI%Ki} / 1024 / 1024 )) ;;
+  *Mi) NODE_MEM_GB=$(( ${NODE_MEM_KI%Mi} / 1024 )) ;;
+  *Gi) NODE_MEM_GB=${NODE_MEM_KI%Gi} ;;
+  *)   NODE_MEM_GB=0 ;;
+esac
+if (( NODE_MEM_GB > 0 )); then
+  MEM_CAP_GB=$(( NODE_MEM_GB * MEM_CAP_PCT / 100 ))
+else
+  MEM_CAP_GB=2
+  warn "could not read node allocatable memory; falling back to a ${MEM_CAP_GB}G --mem cap"
+fi
+(( MEM_CAP_GB > 0 )) || MEM_CAP_GB=1
+
+if (( MEM_GB > MEM_CAP_GB )); then
+  warn "--mem ${MEM_GB}G exceeds the ${MEM_CAP_GB}G cap (${MEM_CAP_PCT}% of the node's ${NODE_MEM_GB}G); clamping"
+  MEM_GB=$MEM_CAP_GB
+fi
+
+# What the stress container asks for and is allowed. See the comment on the Job.
+if (( MEM_GB > 0 )); then
+  MEM_REQUEST="${MEM_GB}Gi"
+  MEM_LIMIT="$(( MEM_GB + 1 ))Gi"   # 1Gi of headroom over what stress will hold
+else
+  MEM_REQUEST="64Mi"
+  MEM_LIMIT="256Mi"
+fi
+
 # activeDeadlineSeconds: the backstop. Slightly longer than the stress timeout
 # so a healthy run ends by itself and this only fires if something hangs.
 DEADLINE=$(( DURATION + 60 ))
@@ -120,8 +154,13 @@ DEADLINE=$(( DURATION + 60 ))
 STRESS_ARGS="--cpu ${CPU} --io ${IO} --timeout ${DURATION}s"
 STRESS_ARGS_YAML="\"--cpu\", \"${CPU}\", \"--io\", \"${IO}\", \"--timeout\", \"${DURATION}s\""
 if (( MEM_GB > 0 )); then
-  STRESS_ARGS="${STRESS_ARGS} --vm 1 --vm-bytes ${MEM_GB}G"
-  STRESS_ARGS_YAML="${STRESS_ARGS_YAML}, \"--vm\", \"1\", \"--vm-bytes\", \"${MEM_GB}G\""
+  # --vm-hang 0 is essential, not decoration. Without it `stress --vm` loops
+  # malloc/memset/free, which (measured on this lab) reaches only ~0.9G of a
+  # requested 3G while burning a whole CPU core - so the memory graph is noisy,
+  # under-reports, and pollutes the CPU signal. With --vm-hang 0 the worker
+  # allocates once and holds: a clean 3.0G plateau at ~0m CPU.
+  STRESS_ARGS="${STRESS_ARGS} --vm 1 --vm-bytes ${MEM_GB}G --vm-hang 0"
+  STRESS_ARGS_YAML="${STRESS_ARGS_YAML}, \"--vm\", \"1\", \"--vm-bytes\", \"${MEM_GB}G\", \"--vm-hang\", \"0\""
 fi
 
 cat <<EOF
@@ -133,7 +172,8 @@ EOF
 if [[ "$MODE" == node || "$MODE" == both ]]; then
   cat <<EOF
   node stress     : stress $STRESS_ARGS
-  memory stress   : $( (( MEM_GB > 0 )) && echo "${MEM_GB}G  <-- opt-in" || echo "off (recommended)" )
+  memory stress   : $( (( MEM_GB > 0 )) && echo "${MEM_GB}G held (request ${MEM_REQUEST}, limit ${MEM_LIMIT})" || echo "off" )
+  memory cap      : ${MEM_CAP_GB}G  (${MEM_CAP_PCT}% of the node's ${NODE_MEM_GB}G)
 EOF
 fi
 if [[ "$MODE" == hpa || "$MODE" == both ]]; then
@@ -192,10 +232,20 @@ spec:
           # upstream Kubernetes docs also set command: ["stress"].
           command: ["/usr/local/bin/stress"]
           args: [${STRESS_ARGS_YAML}]
+          # Two independent protections for the node, which also runs the
+          # control plane:
+          #   requests.memory -> the SCHEDULER refuses to place the pod if the
+          #                      node cannot spare it. You get a Pending pod
+          #                      instead of an OOM-killed API server.
+          #   limits.memory   -> the CGROUP kills this container, and only this
+          #                      container, if it exceeds what it asked for.
+          # Together these are what make a large --mem safe to ask for.
           resources:
             requests:
               cpu: 100m
-              memory: 64Mi
+              memory: ${MEM_REQUEST}
+            limits:
+              memory: ${MEM_LIMIT}
 EOF
 fi
 

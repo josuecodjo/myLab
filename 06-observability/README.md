@@ -194,11 +194,42 @@ No recommended answers here on purpose. Write down what you chose and why.
   HPA's scale-down stabilization window, not a stuck deployment.
 - `--mode both` — run them together and see them interact.
 
+### Driving memory up
+
+`--mem GB` is opt-in and off by default. It is capped at **50% of the node's own
+allocatable memory** — resolved from the node at runtime, not hardcoded, because
+this script gets run against more than one machine. The run summary prints the
+resolved cap, and asking for more clamps with a warning:
+
+```bash
+./scripts/load-test.sh --mode node --mem 8 --duration 180 --yes
+#   memory stress   : 8G held (request 8Gi, limit 9Gi)
+#   memory cap      : 15G  (50% of the node's 30G)
+```
+
+Verified on this lab: that run took the node from 18% to **44%** memory, with the
+pod holding the full 8.2 GB.
+
+> **Why `--vm-hang 0` is in there.** Plain `stress --vm` loops
+> malloc/memset/free. Measured here, a requested 3 GB reached only ~0.9 GB of
+> steady-state RSS *while burning a whole CPU core* — a noisy memory graph that
+> also pollutes the CPU signal. With `--vm-hang 0` the worker allocates once and
+> holds: a clean 3.0 GB plateau at ~0m CPU. If you want memory to *look* high,
+> you want it held, not churned.
+
 **Safety, because this node also runs the control plane:**
 
 - CPU saturation is safe — things get slow, nothing dies.
-- **Memory saturation is not.** Exhausting 31 GB OOM-kills the control plane and
-  takes the API server with it. `--mem` is therefore opt-in and hard-capped at 4 GB.
+- **Memory is the risky one**, so the stress container carries two independent
+  protections:
+  - a **memory request**, so the *scheduler* refuses an impossible ask — you get
+    a Pending pod rather than a dead API server;
+  - a **memory limit** 1 GiB above what it will hold, so the *cgroup* kills only
+    that container on overshoot. Verified: a container told to hold 3 GB under a
+    1 GiB limit came back `OOMKilled` / exit 137 while the API server stayed
+    `readyz: ok`.
+  
+  Those two are what make a large `--mem` safe to ask for at all.
 - Load stops three independent ways: `stress --timeout`, `activeDeadlineSeconds`
   on the Job, and a cleanup trap. The Job deadline is the one that matters — it
   survives the script being killed or your SSH session dropping. Ctrl-C is safe.
